@@ -5,11 +5,13 @@ class AGiXTSDK {
   final String baseUri;
   final Map<String, String> headers;
 
-  AGiXTSDK({String baseUri = 'http://localhost:7437', String apiKey})
-      : baseUri = baseUri.endsWith('/') ? baseUri.substring(0, baseUri.length - 1) : baseUri,
+  AGiXTSDK({
+    String baseUri = 'http://localhost:7437',
+    String apiKey = '',
+  })  : baseUri = baseUri.endsWith('/') ? baseUri.substring(0, baseUri.length - 1) : baseUri,
         headers = {
           'Content-Type': 'application/json',
-          if (apiKey != null) 'Authorization': apiKey.replaceAll('Bearer ', '').replaceAll('bearer ', ''),
+          'Authorization': apiKey.replaceAll('Bearer ', '').replaceAll('bearer ', ''),
         };
 
   dynamic handleError(error) {
@@ -62,37 +64,38 @@ class AGiXTSDK {
     }
   }
 
-  Future<Map<String, dynamic>> addAgent(String agentName, {Map<String, dynamic> settings = const {}}) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUri/api/agent'),
-        headers: headers,
-        body: json.encode({'agent_name': agentName, 'settings': settings}),
-      );
-      return Map<String, dynamic>.from(json.decode(response.body));
-    } catch (e) {
-      return handleError(e);
-    }
+  Future<String> addAgent({required String agentName, Map<String, dynamic> settings = const {}}) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUri/api/agent'),
+      headers: headers,
+      body: json.encode({'agent_name': agentName, 'settings': settings}),
+    );
+    return json.decode(response.body)['message'];
+  } catch (e) {
+    return handleError(e);
   }
+}
 
-  Future<Map<String, dynamic>> importAgent(
-    String agentName, {
-    Map<String, dynamic> settings = const {},
-    Map<String, dynamic> commands = const {},
-  }) async {
+
+  Future<String> importAgent(
+  {required String agentName,
+  Map<String, dynamic> settings = const {},
+  Map<String, dynamic> commands = const {},
+}) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUri/api/agent/import'),
         headers: headers,
         body: json.encode({'agent_name': agentName, 'settings': settings, 'commands': commands}),
       );
-      return Map<String, dynamic>.from(json.decode(response.body));
+      return json.decode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
   }
 
-  Future<String> renameAgent(String agentName, String newName) async {
+  Future<String> renameAgent({required String agentName, required String newName}) async {
     try {
       final response = await http.patch(
         Uri.parse('$baseUri/api/agent/$agentName'),
@@ -105,7 +108,7 @@ class AGiXTSDK {
     }
   }
 
-  Future<String> updateAgentSettings(String agentName, Map<String, dynamic> settings) async {
+Future<String> updateAgentSettings({required String agentName, Map<String, dynamic> settings = const {}}) async {
     try {
       final response = await http.put(
         Uri.parse('$baseUri/api/agent/$agentName'),
@@ -117,7 +120,7 @@ class AGiXTSDK {
     }
   }
 
-  Future<String> updateAgentCommands(String agentName, Map<String, dynamic> commands) async {
+  Future<String> updateAgentCommands({required String agentName, Map<String, dynamic> commands = const {}}) async {
     try {
       final response = await http.put(
         Uri.parse('$baseUri/api/agent/$agentName/commands'),
@@ -129,7 +132,7 @@ class AGiXTSDK {
     }
   }
 
-  Future<String> deleteAgent(String agentName) async {
+  Future<String> deleteAgent({required String agentName}) async {
     try {
       final response = await http.delete(Uri.parse('$baseUri/api/agent/$agentName'), headers: headers);
       return json.decode(response.body)['message'];
@@ -147,7 +150,7 @@ class AGiXTSDK {
     }
   }
 
-  Future<Map<String, dynamic>> getAgentConfig(String agentName) async {
+  Future<Map<String, dynamic>> getAgentConfig({required String agentName}) async {
     try {
       final response = await http.get(Uri.parse('$baseUri/api/agent/$agentName'), headers: headers);
       return Map<String, dynamic>.from(json.decode(response.body)['agent']);
@@ -166,14 +169,14 @@ class AGiXTSDK {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getConversation(
-    String agentName,
-    String conversationName, {
+Future<List<Map<String, dynamic>>> getConversation(
+    {required String agentName,
+    required String conversationName,
     int limit = 100,
     int page = 1,
   }) async {
     try {
-      final response = await http.get(
+      final response = await http.post(
         Uri.parse('$baseUri/api/conversation'),
         headers: headers,
         body: json.encode({
@@ -189,9 +192,9 @@ class AGiXTSDK {
     }
   }
 
-  Future<List<Map<String, dynamic>>> newConversation(
-    String agentName,
-    String conversationName, {
+  Future<String> newConversation(
+    {required String agentName,
+    required String conversationName,
     List<Map<String, dynamic>> conversationContent = const [],
   }) async {
     try {
@@ -204,13 +207,13 @@ class AGiXTSDK {
           'conversation_content': conversationContent,
         }),
       );
-      return List<Map<String, dynamic>>.from(json.decode(response.body)['conversation_history']);
+      return json.decode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
   }
 
-  Future<String> deleteConversation(String agentName, String conversationName) async {
+  Future<String> deleteConversation({required String agentName, required String conversationName}) async {
     try {
       final response = await http.delete(
         Uri.parse('$baseUri/api/conversation'),
@@ -226,7 +229,11 @@ class AGiXTSDK {
     }
   }
 
-  Future<String> deleteConversationMessage(String agentName, String conversationName, String message) async {
+  Future<String> deleteConversationMessage(
+  {required String agentName,
+  required String conversationName,
+  required String message,
+}) async {
     try {
       final response = await http.delete(
         Uri.parse('$baseUri/api/conversation/message'),
@@ -244,11 +251,11 @@ class AGiXTSDK {
   }
 
   Future<String> updateConversationMessage(
-    String agentName,
-    String conversationName,
-    String message,
-    String newMessage,
-  ) async {
+  {required String agentName,
+  required String conversationName,
+  required String message,
+  required String newMessage,
+}) async {
     try {
       final response = await http.put(
         Uri.parse('$baseUri/api/conversation/message'),
@@ -267,10 +274,10 @@ class AGiXTSDK {
   }
 
   Future<String> promptAgent(
-    String agentName,
-    String promptName,
-    Map<String, dynamic> promptArgs,
-  ) async {
+  {required String agentName,
+  required String promptName,
+  required Map<String, dynamic> promptArgs,
+}) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUri/api/agent/$agentName/prompt'),
@@ -286,17 +293,17 @@ class AGiXTSDK {
     }
   }
 
-  Future<String> instruct(String agentName, String userInput, String conversation) async {
-    return promptAgent(
-      agentName: agentName,
-      promptName: 'instruct',
-      promptArgs: {
-        'user_input': userInput,
-        'disable_memory': true,
-        'conversation_name': conversation,
-      },
-    );
-  }
+Future<String> instruct(String agentName, String userInput, String conversation) async {
+  return promptAgent(
+    agentName: agentName,
+    promptName: 'instruct',
+    promptArgs: {
+      'user_input': userInput,
+      'disable_memory': true,
+      'conversation_name': conversation,
+    },
+  );
+}
 
   Future<String> chat(
     String agentName,
@@ -316,19 +323,19 @@ class AGiXTSDK {
     );
   }
 
-  Future<String> smartInstruct(String agentName, String userInput, String conversation) async {
-    return runChain(
-      chainName: 'Smart Instruct',
-      userInput: userInput,
-      agentName: agentName,
-      allResponses: false,
-      fromStep: 1,
-      chainArgs: {
-        'conversation_name': conversation,
-        'disable_memory': true,
-      },
-    );
-  }
+Future<String> smartInstruct(String agentName, String userInput, String conversation) async {
+  return runChain(
+    chainName: 'Smart Instruct',
+    userInput: userInput,
+    agentName: agentName,
+    allResponses: false,
+    fromStep: 1,
+    chainArgs: {
+      'conversation_name': conversation,
+      'disable_memory': true,
+    },
+  );
+}
 
   Future<String> smartChat(String agentName, String userInput, String conversation) async {
     return runChain(
@@ -366,12 +373,12 @@ class AGiXTSDK {
     }
   }
 
-  Future<dynamic> executeCommand(
-    String agentName,
-    String commandName,
-    Map<String, dynamic> commandArgs, {
-    String conversationName = 'AGiXT Terminal Command Execution',
-  }) async {
+Future<String> executeCommand({
+  String agentName = '',
+  String commandName = '',
+  Map<String, dynamic> commandArgs = const {},
+  String conversationName = 'AGiXT Terminal Command Execution',
+}) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUri/api/agent/$agentName/command'),
@@ -387,7 +394,7 @@ class AGiXTSDK {
       return handleError(e);
     }
   }
-
+  
   Future<List<String>> getChains() async {
     try {
       final response = await http.get(Uri.parse('$baseUri/api/chain'), headers: headers);
@@ -424,14 +431,14 @@ class AGiXTSDK {
     }
   }
 
-  Future<dynamic> runChain(
-    String chainName,
-    String userInput, {
-    String agentName = '',
-    bool allResponses = false,
-    int fromStep = 1,
-    Map<String, dynamic> chainArgs = const {},
-  }) async {
+ Future<String> runChain({
+  required String chainName,
+  required String userInput,
+  String agentName = '',
+  bool allResponses = false,
+  int fromStep = 1,
+  Map<String, dynamic> chainArgs = const {},
+}) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUri/api/chain/$chainName/run'),
@@ -444,17 +451,17 @@ class AGiXTSDK {
           'chain_args': chainArgs,
         }),
       );
-      return json.decode(response.body);
+      return json.decode(response.body)['response'];
     } catch (e) {
       return handleError(e);
-}
+    }
   }
 
   Future<dynamic> runChainStep(
     String chainName,
     int stepNumber,
     String userInput, {
-    String agentName,
+    String agentName = '',
     Map<String, dynamic> chainArgs = const {},
   }) async {
     try {
@@ -801,8 +808,8 @@ class AGiXTSDK {
   Future<String> learnGithubRepo(
     String agentName,
     String githubRepo, {
-    String githubUser,
-    String githubToken,
+    String? githubUser,
+    String? githubToken,
     String githubBranch = 'main',
     bool useAgentSettings = false,
     int collectionNumber = 0,
@@ -828,8 +835,8 @@ class AGiXTSDK {
 
   Future<String> learnArxiv(
     String agentName, {
-    String query,
-    String arxivIds,
+    String? query,
+    String? arxivIds,
     int maxResults = 5,
     int collectionNumber = 0,
   }) async {
@@ -996,11 +1003,11 @@ class AGiXTSDK {
 
   Future<String> textToSpeech(String agentName, String text, String conversationName) async {
     final response = await executeCommand(
-      agentName: agentName,
-      commandName: 'Text to Speech',
-      commandArgs: {'text': text},
-      conversationName: conversationName,
-    );
+  agentName: agentName,
+  commandName: 'Text to Speech',
+  commandArgs: {'text': text},
+  conversationName: conversationName,
+);
     return response;
   }
 }
