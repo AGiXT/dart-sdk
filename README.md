@@ -31,7 +31,7 @@ The AGiXT SDK is a Dart library that provides a set of APIs for interacting with
 
 To use the AGiXT SDK, you need to import the library and create an instance of the `AGiXTSDK` class, passing in the base URI and API key as parameters.
 ```dart
-import 'package:agixt_sdk/agixt_sdk.dart';
+import 'agixt.dart';
 
 void main() {
   final agixtSDK = AGiXTSDK(
@@ -120,6 +120,3 @@ Future<String> handleError(error) {
   return 'Unable to retrieve data.';
 }
 ```
-**Conclusion**
-
-The AGiXT SDK provides a powerful set of APIs for interacting with the AGiXT platform. By using this SDK, developers can create agents, manage conversations, and execute commands on the platform.
