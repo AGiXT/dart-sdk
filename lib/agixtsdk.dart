@@ -86,10 +86,228 @@ class AGiXTSDK {
           headers["Authorization"] = token;
           print("Log in at \$detail");
         }
-      }
+        }
     } catch (e) {
       handleError(e);
     }
+  }
+
+  Future<Map<String, dynamic>> getAgentConfig(String agentName) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/config"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      handleError(e);
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> newConversationMessage({
+    String role = "user",
+    String message = "",
+    String conversationName = "",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/conversation/message"),
+        headers: headers,
+        body: jsonEncode({
+          "role": role,
+          "message": message,
+          "conversation_name": conversationName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      handleError(e);
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> promptAgent({
+    required String agentName,
+    required String promptName,
+    required Map<String, dynamic> promptArgs,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/prompt/\$promptName"),
+        headers: headers,
+        body: jsonEncode(promptArgs),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      handleError(e);
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> executeCommand({
+    required String agentName,
+    required String commandName,
+    required Map<String, dynamic> commandArgs,
+    String conversationName = "AGiXT Terminal Command Execution",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/command/\$commandName"),
+        headers: headers,
+        body: jsonEncode({
+          "command_args": commandArgs,
+          "conversation_name": conversationName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      handleError(e);
+      return {};
+    }
+  }
+
+  Future<Map<String, dynamic>> runChain({
+    required String chainName,
+    required String userInput,
+    String agentName = "",
+    bool allResponses = false,
+    int fromStep = 1,
+    Map<String, dynamic> chainArgs = const {},
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/chain/\$chainName/run"),
+        headers: headers,
+        body: jsonEncode({
+          "user_input": userInput,
+          "agent_name": agentName,
+          "all_responses": allResponses,
+          "from_step": fromStep,
+          "chain_args": chainArgs,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      handleError(e);
+      return {};
+    }
+  }
+
+  Future<String> learnUrl({
+    required String agentName,
+    required String url,
+    String collectionNumber = "0",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/learn/url"),
+        headers: headers,
+        body: jsonEncode({
+          "url": url,
+          "collection_number": collectionNumber,
+        }),
+      );
+      parseResponse(response);
+      return response.body;
+    } catch (e) {
+      handleError(e);
+      return "";
+    }
+  }
+
+  Future<String> learnFile({
+    required String agentName,
+    required String fileName,
+    required String fileContent,
+    String collectionNumber = "0",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/learn/file"),
+        headers: headers,
+        body: jsonEncode({
+          "file_name": fileName,
+          "file_content": fileContent,
+          "collection_number": collectionNumber,
+        }),
+      );
+      parseResponse(response);
+      return response.body;
+    } catch (e) {
+      handleError(e);
+      return "";
+    }
+  }
+
+  Future<String> learnGithubRepo({
+    required String agentName,
+    required String githubRepo,
+    String? githubUser,
+    String? githubToken,
+    String githubBranch = "main",
+    bool useAgentSettings = false,
+    String collectionNumber = "0",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/learn/github"),
+        headers: headers,
+        body: jsonEncode({
+          "github_repo": githubRepo,
+          "github_user": githubUser,
+          "github_token": githubToken,
+          "github_branch": githubBranch,
+          "use_agent_settings": useAgentSettings,
+          "collection_number": collectionNumber,
+        }),
+      );
+      parseResponse(response);
+      return response.body;
+    } catch (e) {
+      handleError(e);
+      return "";
+    }
+  }
+
+  Future<String> textToSpeech({
+    required String agentName,
+    required String text,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/agent/\$agentName/text-to-speech"),
+        headers: headers,
+        body: jsonEncode({
+          "text": text,
+        }),
+      );
+      parseResponse(response);
+      return response.body;
+    } catch (e) {
+      handleError(e);
+      return "";
+    }
+  }
+
+  String _generateDetailedSchema(Type model, {int depth = 0}) {
+    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for generating detailed schema
+    return "Detailed schema for model: \$model at depth: \$depth";
+  }
+
+  String _getTypeName(Type type) {
+    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for getting type name
+    return type.toString();
+  }
+
+  T convertToModel<T>(String inputString, Type model, {String agentName = "gpt4free", int maxFailures = 3, String? responseType, Map<String, dynamic>? kwargs}) {
+    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for converting to model
+    return jsonDecode(inputString) as T;
   }
 
   Future<String> registerUser(String email, String firstName, String lastName) async {
