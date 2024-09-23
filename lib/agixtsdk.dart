@@ -38,8 +38,20 @@ class ChatCompletions {
 }
 
 int getTokens(String text) {
-  // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for tiktoken
-  return text.length ~/ 4; // Very rough approximation
+    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for tiktoken
+    return text.length ~/ 4; // Very rough approximation
+}
+
+void parseResponse(http.Response response) {
+    print('Status Code: ${response.statusCode}');
+    print('Response JSON:');
+    if (response.statusCode == 200) {
+        print(jsonDecode(response.body));
+    } else {
+        print(response.body);
+        throw Exception('Failed to load data');
+    }
+    print('\n');
 }
 
 class AGiXTSDK {
@@ -56,6 +68,493 @@ class AGiXTSDK {
   dynamic handleError(dynamic error) {
     print("Error: $error");
     throw Exception("Unable to retrieve data. $error");
+  }
+
+  Future<void> login(String email, String otp) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/login"),
+        headers: headers,
+        body: jsonEncode({"email": email, "token": otp}),
+      );
+      parseResponse(response);
+      final responseBody = jsonDecode(response.body);
+      if (responseBody.containsKey("detail")) {
+        final detail = responseBody["detail"];
+        if (detail.contains("?token=")) {
+          final token = detail.split("token=")[1];
+          headers["Authorization"] = token;
+          print("Log in at \$detail");
+        }
+      }
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  Future<String> registerUser(String email, String firstName, String lastName) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/v1/user"),
+        headers: headers,
+        body: jsonEncode({
+          "email": email,
+          "first_name": firstName,
+          "last_name": lastName,
+        }),
+      );
+      parseResponse(response);
+      final responseBody = jsonDecode(response.body);
+      if (responseBody.containsKey("otp_uri")) {
+        final mfaToken = responseBody["otp_uri"].split("secret=")[1].split("&")[0];
+        final totp = TOTP(mfaToken);
+        await login(email, totp.now());
+        return responseBody["otp_uri"];
+      } else {
+        return responseBody.toString();
+      }
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<bool> userExists(String email) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/v1/user/exists?email=\$email"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["exists"];
+    } catch (e) {
+      return handleError(e) as bool;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateUser(Map<String, dynamic> userDetails) async {
+    try {
+      final response = await http.put(
+        Uri.parse("\$baseUri/v1/user"),
+        headers: headers,
+        body: jsonEncode(userDetails),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<Map<String, dynamic>> getUser() async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/v1/user"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<Map<String, dynamic>> addAgent(String agentName, Map<String, dynamic> settings, Map<String, dynamic> commands, List<String> trainingUrls) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/api/agent"),
+        headers: headers,
+        body: jsonEncode({
+          "agent_name": agentName,
+          "settings": settings,
+          "commands": commands,
+          "training_urls": trainingUrls,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<Map<String, dynamic>> importAgent(String agentName, Map<String, dynamic> settings, Map<String, dynamic> commands) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/api/agent/import"),
+        headers: headers,
+        body: jsonEncode({
+          "agent_name": agentName,
+          "settings": settings,
+          "commands": commands,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<String> renameAgent(String agentName, String newName) async {
+    try {
+      final response = await http.patch(
+        Uri.parse("\$baseUri/api/agent/\$agentName"),
+        headers: headers,
+        body: jsonEncode({"new_name": newName}),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> updateAgentSettings(String agentName, Map<String, dynamic> settings) async {
+    try {
+      final response = await http.put(
+        Uri.parse("\$baseUri/api/agent/\$agentName"),
+        headers: headers,
+        body: jsonEncode({"settings": settings, "agent_name": agentName}),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> updateAgentCommands(String agentName, Map<String, dynamic> commands) async {
+    try {
+      final response = await http.put(
+        Uri.parse("\$baseUri/api/agent/\$agentName/commands"),
+        headers: headers,
+        body: jsonEncode({"commands": commands, "agent_name": agentName}),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> deleteAgent(String agentName) async {
+    try {
+      final response = await http.delete(
+        Uri.parse("\$baseUri/api/agent/\$agentName"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAgents() async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/agent"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["agents"]);
+    } catch (e) {
+      return handleError(e) as List<Map<String, dynamic>>;
+    }
+  }
+
+  Future<Map<String, dynamic>> getAgentConfig(String agentName) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/agent/\$agentName"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["agent"];
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<List<String>> getConversations(String agentName) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/conversations"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return List<String>.from(jsonDecode(response.body)["conversations"]);
+    } catch (e) {
+      return handleError(e) as List<String>;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getConversationsWithIds() async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/conversations"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversations_with_ids"]);
+    } catch (e) {
+      return handleError(e) as List<Map<String, dynamic>>;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getConversation(String agentName, String conversationName, {int limit = 100, int page = 1}) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/conversation"),
+        headers: headers,
+        body: jsonEncode({
+          "conversation_name": conversationName,
+          "agent_name": agentName,
+          "limit": limit,
+          "page": page,
+        }),
+      );
+      parseResponse(response);
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversation_history"]);
+    } catch (e) {
+      return handleError(e) as List<Map<String, dynamic>>;
+    }
+  }
+
+  Future<String> forkConversation(String conversationName, String messageId) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/api/conversation/fork"),
+        headers: headers,
+        body: jsonEncode({"conversation_name": conversationName, "message_id": messageId}),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> newConversation(String agentName, String conversationName, List<Map<String, dynamic>> conversationContent) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/api/conversation"),
+        headers: headers,
+        body: jsonEncode({
+          "conversation_name": conversationName,
+          "agent_name": agentName,
+          "conversation_content": conversationContent,
+        }),
+      );
+      parseResponse(response);
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversation_history"]);
+    } catch (e) {
+      return handleError(e) as List<Map<String, dynamic>>;
+    }
+  }
+
+  Future<String> renameConversation(String agentName, String conversationName, String newName) async {
+    try {
+      final response = await http.put(
+        Uri.parse("\$baseUri/api/conversation"),
+        headers: headers,
+        body: jsonEncode({
+          "conversation_name": conversationName,
+          "new_conversation_name": newName,
+          "agent_name": agentName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["conversation_name"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> deleteConversation(String agentName, String conversationName) async {
+    try {
+      final response = await http.delete(
+        Uri.parse("\$baseUri/api/conversation"),
+        headers: headers,
+        body: jsonEncode({
+          "conversation_name": conversationName,
+          "agent_name": agentName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> deleteConversationMessage(String agentName, String conversationName, String message) async {
+    try {
+      final response = await http.delete(
+        Uri.parse("\$baseUri/api/conversation/message"),
+        headers: headers,
+        body: jsonEncode({
+          "message": message,
+          "agent_name": agentName,
+          "conversation_name": conversationName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> updateConversationMessage(String agentName, String conversationName, String message, String newMessage) async {
+    try {
+      final response = await http.put(
+        Uri.parse("\$baseUri/api/conversation/message"),
+        headers: headers,
+        body: jsonEncode({
+          "message": message,
+          "new_message": newMessage,
+          "agent_name": agentName,
+          "conversation_name": conversationName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> newConversationMessage(String role, String message, String conversationName) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/api/conversation/message"),
+        headers: headers,
+        body: jsonEncode({
+          "role": role,
+          "message": message,
+          "conversation_name": conversationName,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> addPrompt(String promptName, String prompt, {String promptCategory = "Default"}) async {
+    try {
+      final response = await http.post(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory"),
+        headers: headers,
+        body: jsonEncode({
+          "prompt_name": promptName,
+          "prompt": prompt,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<Map<String, dynamic>> getPrompt(String promptName, {String promptCategory = "Default"}) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["prompt"];
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<List<String>> getPrompts({String promptCategory = "Default"}) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return List<String>.from(jsonDecode(response.body)["prompts"]);
+    } catch (e) {
+      return handleError(e) as List<String>;
+    }
+  }
+
+  Future<List<String>> getPromptCategories() async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/prompt/categories"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return List<String>.from(jsonDecode(response.body)["prompt_categories"]);
+    } catch (e) {
+      return handleError(e) as List<String>;
+    }
+  }
+
+  Future<Map<String, dynamic>> getPromptArgs(String promptName, {String promptCategory = "Default"}) async {
+    try {
+      final response = await http.get(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName/args"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["prompt_args"];
+    } catch (e) {
+      return handleError(e) as Map<String, dynamic>;
+    }
+  }
+
+  Future<String> deletePrompt(String promptName, {String promptCategory = "Default"}) async {
+    try {
+      final response = await http.delete(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
+        headers: headers,
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> updatePrompt(String promptName, String prompt, {String promptCategory = "Default"}) async {
+    try {
+      final response = await http.put(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
+        headers: headers,
+        body: jsonEncode({
+          "prompt": prompt,
+          "prompt_name": promptName,
+          "prompt_category": promptCategory,
+        }),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
+  }
+
+  Future<String> renamePrompt(String promptName, String newName, {String promptCategory = "Default"}) async {
+    try {
+      final response = await http.patch(
+        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
+        headers: headers,
+        body: jsonEncode({"prompt_name": newName}),
+      );
+      parseResponse(response);
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e).toString();
+    }
   }
 
   Future<List<String>> getProviders() async {
