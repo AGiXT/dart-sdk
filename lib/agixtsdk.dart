@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 class ChatCompletions {
   String model;
-  List<Map<String, dynamic>>? messages;
+  List<Map<String, dynamic>> messages;
   double? temperature;
   double? topP;
   List<Map<String, dynamic>>? tools;
@@ -20,8 +20,8 @@ class ChatCompletions {
   String? user;
 
   ChatCompletions({
-    this.model = "gpt4free",
-    this.messages,
+    required this.model,
+    required this.messages,
     this.temperature = 0.9,
     this.topP = 1.0,
     this.tools,
@@ -37,748 +37,114 @@ class ChatCompletions {
   });
 }
 
-int getTokens(String text) {
-    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for tiktoken
-    return text.length ~/ 4; // Very rough approximation
-}
-
-void parseResponse(http.Response response) {
-    print('Status Code: ${response.statusCode}');
-    print('Response JSON:');
-    if (response.statusCode == 200) {
-        print(jsonDecode(response.body));
-    } else {
-        print(response.body);
-        throw Exception('Failed to load data');
-    }
-    print('\n');
-}
-
 class AGiXTSDK {
   String baseUri;
   Map<String, String> headers;
+  bool verbose;
+  int failures;
 
-  AGiXTSDK({String? baseUri, String? apiKey}) 
-      : baseUri = baseUri ?? "http://localhost:7437",
+  AGiXTSDK({String? baseUri, String? apiKey, this.verbose = false})
+      : baseUri = baseUri ?? 'http://localhost:7437',
         headers = {
-          "Content-Type": "application/json",
-          if (apiKey != null) "Authorization": apiKey.replaceAll(RegExp(r'^(Bearer |bearer )'), ''),
-        };
-
-  dynamic handleError(dynamic error) {
-    print("Error: $error");
-    throw Exception("Unable to retrieve data. $error");
-  }
-
-  Future<void> login(String email, String otp) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/login"),
-        headers: headers,
-        body: jsonEncode({"email": email, "token": otp}),
-      );
-      parseResponse(response);
-      final responseBody = jsonDecode(response.body);
-      if (responseBody.containsKey("detail")) {
-        final detail = responseBody["detail"];
-        if (detail.contains("?token=")) {
-          final token = detail.split("token=")[1];
-          headers["Authorization"] = token;
-          print("Log in at \$detail");
-        }
-        }
-    } catch (e) {
-      handleError(e);
+          'Content-Type': 'application/json',
+          if (apiKey != null) 'Authorization': apiKey.replaceAll(RegExp(r'Bearer ', caseSensitive: false), ''),
+        },
+        failures = 0 {
+    if (this.baseUri.endsWith('/')) {
+      this.baseUri = this.baseUri.substring(0, this.baseUri.length - 1);
     }
   }
 
-  Future<Map<String, dynamic>> getAgentConfig(String agentName) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/config"),
-        headers: headers,
-      );
+  void handleError(dynamic error) {
+    print('Error: $error');
+    throw Exception('Unable to retrieve data. $error');
+  }
+
+  Future<String> login(String email, String otp) async {
+    final response = await http.post(
+      Uri.parse('$baseUri/v1/login'),
+      headers: headers,
+      body: jsonEncode({'email': email, 'token': otp}),
+    );
+    if (verbose) {
       parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      handleError(e);
-      return {};
     }
-  }
-
-  Future<Map<String, dynamic>> newConversationMessage({
-    String role = "user",
-    String message = "",
-    String conversationName = "",
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/conversation/message"),
-        headers: headers,
-        body: jsonEncode({
-          "role": role,
-          "message": message,
-          "conversation_name": conversationName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      handleError(e);
-      return {};
-    }
-  }
-
-  Future<Map<String, dynamic>> promptAgent({
-    required String agentName,
-    required String promptName,
-    required Map<String, dynamic> promptArgs,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/prompt/\$promptName"),
-        headers: headers,
-        body: jsonEncode(promptArgs),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      handleError(e);
-      return {};
-    }
-  }
-
-  Future<Map<String, dynamic>> executeCommand({
-    required String agentName,
-    required String commandName,
-    required Map<String, dynamic> commandArgs,
-    String conversationName = "AGiXT Terminal Command Execution",
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/command/\$commandName"),
-        headers: headers,
-        body: jsonEncode({
-          "command_args": commandArgs,
-          "conversation_name": conversationName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      handleError(e);
-      return {};
-    }
-  }
-
-  Future<Map<String, dynamic>> runChain({
-    required String chainName,
-    required String userInput,
-    String agentName = "",
-    bool allResponses = false,
-    int fromStep = 1,
-    Map<String, dynamic> chainArgs = const {},
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/chain/\$chainName/run"),
-        headers: headers,
-        body: jsonEncode({
-          "user_input": userInput,
-          "agent_name": agentName,
-          "all_responses": allResponses,
-          "from_step": fromStep,
-          "chain_args": chainArgs,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      handleError(e);
-      return {};
-    }
-  }
-
-  Future<String> learnUrl({
-    required String agentName,
-    required String url,
-    String collectionNumber = "0",
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/learn/url"),
-        headers: headers,
-        body: jsonEncode({
-          "url": url,
-          "collection_number": collectionNumber,
-        }),
-      );
-      parseResponse(response);
-      return response.body;
-    } catch (e) {
-      handleError(e);
-      return "";
-    }
-  }
-
-  Future<String> learnFile({
-    required String agentName,
-    required String fileName,
-    required String fileContent,
-    String collectionNumber = "0",
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/learn/file"),
-        headers: headers,
-        body: jsonEncode({
-          "file_name": fileName,
-          "file_content": fileContent,
-          "collection_number": collectionNumber,
-        }),
-      );
-      parseResponse(response);
-      return response.body;
-    } catch (e) {
-      handleError(e);
-      return "";
-    }
-  }
-
-  Future<String> learnGithubRepo({
-    required String agentName,
-    required String githubRepo,
-    String? githubUser,
-    String? githubToken,
-    String githubBranch = "main",
-    bool useAgentSettings = false,
-    String collectionNumber = "0",
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/learn/github"),
-        headers: headers,
-        body: jsonEncode({
-          "github_repo": githubRepo,
-          "github_user": githubUser,
-          "github_token": githubToken,
-          "github_branch": githubBranch,
-          "use_agent_settings": useAgentSettings,
-          "collection_number": collectionNumber,
-        }),
-      );
-      parseResponse(response);
-      return response.body;
-    } catch (e) {
-      handleError(e);
-      return "";
-    }
-  }
-
-  Future<String> textToSpeech({
-    required String agentName,
-    required String text,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/agent/\$agentName/text-to-speech"),
-        headers: headers,
-        body: jsonEncode({
-          "text": text,
-        }),
-      );
-      parseResponse(response);
-      return response.body;
-    } catch (e) {
-      handleError(e);
-      return "";
-    }
-  }
-
-  String _generateDetailedSchema(Type model, {int depth = 0}) {
-    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for generating detailed schema
-    return "Detailed schema for model: \$model at depth: \$depth";
-  }
-
-  String _getTypeName(Type type) {
-    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for getting type name
-    return type.toString();
-  }
-
-  T convertToModel<T>(String inputString, Type model, {String agentName = "gpt4free", int maxFailures = 3, String? responseType, Map<String, dynamic>? kwargs}) {
-    // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for converting to model
-    return jsonDecode(inputString) as T;
-  }
-
-  Future<String> registerUser(String email, String firstName, String lastName) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/v1/user"),
-        headers: headers,
-        body: jsonEncode({
-          "email": email,
-          "first_name": firstName,
-          "last_name": lastName,
-        }),
-      );
-      parseResponse(response);
-      final responseBody = jsonDecode(response.body);
-      if (responseBody.containsKey("otp_uri")) {
-        final mfaToken = responseBody["otp_uri"].split("secret=")[1].split("&")[0];
-        final totp = TOTP(mfaToken);
-        await login(email, totp.now());
-        return responseBody["otp_uri"];
-      } else {
-        return responseBody.toString();
+    final responseJson = jsonDecode(response.body);
+    if (responseJson.containsKey('detail')) {
+      final detail = responseJson['detail'];
+      if (detail.contains('?token=')) {
+        final token = detail.split('token=')[1];
+        headers['Authorization'] = token;
+        print('Log in at $detail');
+        return token;
       }
-    } catch (e) {
-      return handleError(e).toString();
     }
+    return '';
   }
 
-  Future<bool> userExists(String email) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/v1/user/exists?email=\$email"),
-        headers: headers,
-      );
+  Future<dynamic> registerUser(String email, String firstName, String lastName) async {
+    final response = await http.post(
+      Uri.parse('$baseUri/v1/user'),
+      headers: headers,
+      body: jsonEncode({'email': email, 'first_name': firstName, 'last_name': lastName}),
+    );
+    if (verbose) {
       parseResponse(response);
-      return jsonDecode(response.body)["exists"];
-    } catch (e) {
-      return handleError(e) as bool;
     }
+    final responseJson = jsonDecode(response.body);
+    if (responseJson.containsKey('otp_uri')) {
+      final mfaToken = responseJson['otp_uri'].split('secret=')[1].split('&')[0];
+      final totp = TOTP(mfaToken);
+      await login(email, totp.now());
+      return responseJson['otp_uri'];
+    }
+    return responseJson;
   }
 
-  Future<Map<String, dynamic>> updateUser(Map<String, dynamic> userDetails) async {
-    try {
-      final response = await http.put(
-        Uri.parse("\$baseUri/v1/user"),
-        headers: headers,
-        body: jsonEncode(userDetails),
-      );
+  Future<Map<String, dynamic>> userExists(String email) async {
+    final response = await http.get(
+      Uri.parse('$baseUri/v1/user/exists?email=$email'),
+      headers: headers,
+    );
+    if (verbose) {
       parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
     }
+    return jsonDecode(response.body);
+  }
+
+  Future<Map<String, dynamic>> updateUser(Map<String, dynamic> kwargs) async {
+    final response = await http.put(
+      Uri.parse('$baseUri/v1/user'),
+      headers: headers,
+      body: jsonEncode(kwargs),
+    );
+    if (verbose) {
+      parseResponse(response);
+    }
+    return jsonDecode(response.body);
   }
 
   Future<Map<String, dynamic>> getUser() async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/v1/user"),
-        headers: headers,
-      );
+    final response = await http.get(
+      Uri.parse('$baseUri/v1/user'),
+      headers: headers,
+    );
+    if (verbose) {
       parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
     }
-  }
-
-  Future<Map<String, dynamic>> addAgent(String agentName, Map<String, dynamic> settings, Map<String, dynamic> commands, List<String> trainingUrls) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/api/agent"),
-        headers: headers,
-        body: jsonEncode({
-          "agent_name": agentName,
-          "settings": settings,
-          "commands": commands,
-          "training_urls": trainingUrls,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
-    }
-  }
-
-  Future<Map<String, dynamic>> importAgent(String agentName, Map<String, dynamic> settings, Map<String, dynamic> commands) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/api/agent/import"),
-        headers: headers,
-        body: jsonEncode({
-          "agent_name": agentName,
-          "settings": settings,
-          "commands": commands,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body);
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
-    }
-  }
-
-  Future<String> renameAgent(String agentName, String newName) async {
-    try {
-      final response = await http.patch(
-        Uri.parse("\$baseUri/api/agent/\$agentName"),
-        headers: headers,
-        body: jsonEncode({"new_name": newName}),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> updateAgentSettings(String agentName, Map<String, dynamic> settings) async {
-    try {
-      final response = await http.put(
-        Uri.parse("\$baseUri/api/agent/\$agentName"),
-        headers: headers,
-        body: jsonEncode({"settings": settings, "agent_name": agentName}),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> updateAgentCommands(String agentName, Map<String, dynamic> commands) async {
-    try {
-      final response = await http.put(
-        Uri.parse("\$baseUri/api/agent/\$agentName/commands"),
-        headers: headers,
-        body: jsonEncode({"commands": commands, "agent_name": agentName}),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> deleteAgent(String agentName) async {
-    try {
-      final response = await http.delete(
-        Uri.parse("\$baseUri/api/agent/\$agentName"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> getAgents() async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/agent"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["agents"]);
-    } catch (e) {
-      return handleError(e) as List<Map<String, dynamic>>;
-    }
-  }
-
-  Future<Map<String, dynamic>> getAgentConfig(String agentName) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/agent/\$agentName"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["agent"];
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
-    }
-  }
-
-  Future<List<String>> getConversations(String agentName) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/conversations"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return List<String>.from(jsonDecode(response.body)["conversations"]);
-    } catch (e) {
-      return handleError(e) as List<String>;
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> getConversationsWithIds() async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/conversations"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversations_with_ids"]);
-    } catch (e) {
-      return handleError(e) as List<Map<String, dynamic>>;
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> getConversation(String agentName, String conversationName, {int limit = 100, int page = 1}) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/conversation"),
-        headers: headers,
-        body: jsonEncode({
-          "conversation_name": conversationName,
-          "agent_name": agentName,
-          "limit": limit,
-          "page": page,
-        }),
-      );
-      parseResponse(response);
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversation_history"]);
-    } catch (e) {
-      return handleError(e) as List<Map<String, dynamic>>;
-    }
-  }
-
-  Future<String> forkConversation(String conversationName, String messageId) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/api/conversation/fork"),
-        headers: headers,
-        body: jsonEncode({"conversation_name": conversationName, "message_id": messageId}),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> newConversation(String agentName, String conversationName, List<Map<String, dynamic>> conversationContent) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/api/conversation"),
-        headers: headers,
-        body: jsonEncode({
-          "conversation_name": conversationName,
-          "agent_name": agentName,
-          "conversation_content": conversationContent,
-        }),
-      );
-      parseResponse(response);
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversation_history"]);
-    } catch (e) {
-      return handleError(e) as List<Map<String, dynamic>>;
-    }
-  }
-
-  Future<String> renameConversation(String agentName, String conversationName, String newName) async {
-    try {
-      final response = await http.put(
-        Uri.parse("\$baseUri/api/conversation"),
-        headers: headers,
-        body: jsonEncode({
-          "conversation_name": conversationName,
-          "new_conversation_name": newName,
-          "agent_name": agentName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["conversation_name"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> deleteConversation(String agentName, String conversationName) async {
-    try {
-      final response = await http.delete(
-        Uri.parse("\$baseUri/api/conversation"),
-        headers: headers,
-        body: jsonEncode({
-          "conversation_name": conversationName,
-          "agent_name": agentName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> deleteConversationMessage(String agentName, String conversationName, String message) async {
-    try {
-      final response = await http.delete(
-        Uri.parse("\$baseUri/api/conversation/message"),
-        headers: headers,
-        body: jsonEncode({
-          "message": message,
-          "agent_name": agentName,
-          "conversation_name": conversationName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> updateConversationMessage(String agentName, String conversationName, String message, String newMessage) async {
-    try {
-      final response = await http.put(
-        Uri.parse("\$baseUri/api/conversation/message"),
-        headers: headers,
-        body: jsonEncode({
-          "message": message,
-          "new_message": newMessage,
-          "agent_name": agentName,
-          "conversation_name": conversationName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> newConversationMessage(String role, String message, String conversationName) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/api/conversation/message"),
-        headers: headers,
-        body: jsonEncode({
-          "role": role,
-          "message": message,
-          "conversation_name": conversationName,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> addPrompt(String promptName, String prompt, {String promptCategory = "Default"}) async {
-    try {
-      final response = await http.post(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory"),
-        headers: headers,
-        body: jsonEncode({
-          "prompt_name": promptName,
-          "prompt": prompt,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<Map<String, dynamic>> getPrompt(String promptName, {String promptCategory = "Default"}) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["prompt"];
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
-    }
-  }
-
-  Future<List<String>> getPrompts({String promptCategory = "Default"}) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return List<String>.from(jsonDecode(response.body)["prompts"]);
-    } catch (e) {
-      return handleError(e) as List<String>;
-    }
-  }
-
-  Future<List<String>> getPromptCategories() async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/prompt/categories"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return List<String>.from(jsonDecode(response.body)["prompt_categories"]);
-    } catch (e) {
-      return handleError(e) as List<String>;
-    }
-  }
-
-  Future<Map<String, dynamic>> getPromptArgs(String promptName, {String promptCategory = "Default"}) async {
-    try {
-      final response = await http.get(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName/args"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["prompt_args"];
-    } catch (e) {
-      return handleError(e) as Map<String, dynamic>;
-    }
-  }
-
-  Future<String> deletePrompt(String promptName, {String promptCategory = "Default"}) async {
-    try {
-      final response = await http.delete(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
-        headers: headers,
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> updatePrompt(String promptName, String prompt, {String promptCategory = "Default"}) async {
-    try {
-      final response = await http.put(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
-        headers: headers,
-        body: jsonEncode({
-          "prompt": prompt,
-          "prompt_name": promptName,
-          "prompt_category": promptCategory,
-        }),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
-  }
-
-  Future<String> renamePrompt(String promptName, String newName, {String promptCategory = "Default"}) async {
-    try {
-      final response = await http.patch(
-        Uri.parse("\$baseUri/api/prompt/\$promptCategory/\$promptName"),
-        headers: headers,
-        body: jsonEncode({"prompt_name": newName}),
-      );
-      parseResponse(response);
-      return jsonDecode(response.body)["message"];
-    } catch (e) {
-      return handleError(e).toString();
-    }
+    return jsonDecode(response.body);
   }
 
   Future<List<String>> getProviders() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/provider"), headers: headers);
-      return List<String>.from(jsonDecode(response.body)["providers"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/provider'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['providers']);
     } catch (e) {
       return handleError(e);
     }
@@ -786,8 +152,14 @@ class AGiXTSDK {
 
   Future<List<String>> getProvidersByService(String service) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/providers/service/$service"), headers: headers);
-      return List<String>.from(jsonDecode(response.body)["providers"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/providers/service/$service'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['providers']);
     } catch (e) {
       return handleError(e);
     }
@@ -795,8 +167,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getProviderSettings(String providerName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/provider/$providerName"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["settings"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/provider/$providerName'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['settings']);
     } catch (e) {
       return handleError(e);
     }
@@ -804,8 +182,14 @@ class AGiXTSDK {
 
   Future<List<String>> getEmbedProviders() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/embedding_providers"), headers: headers);
-      return List<String>.from(jsonDecode(response.body)["providers"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/embedding_providers'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['providers']);
     } catch (e) {
       return handleError(e);
     }
@@ -813,8 +197,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getEmbedders() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/embedders"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["embedders"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/embedders'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['embedders']);
     } catch (e) {
       return handleError(e);
     }
@@ -828,15 +218,18 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent"),
+        Uri.parse('$baseUri/api/agent'),
         headers: headers,
         body: jsonEncode({
-          "agent_name": agentName,
-          "settings": settings,
-          "commands": commands,
-          "training_urls": trainingUrls,
+          'agent_name': agentName,
+          'settings': settings,
+          'commands': commands,
+          'training_urls': trainingUrls,
         }),
       );
+      if (verbose) {
+        parseResponse(response);
+      }
       return jsonDecode(response.body);
     } catch (e) {
       return handleError(e);
@@ -850,14 +243,17 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/import"),
+        Uri.parse('$baseUri/api/agent/import'),
         headers: headers,
         body: jsonEncode({
-          "agent_name": agentName,
-          "settings": settings,
-          "commands": commands,
+          'agent_name': agentName,
+          'settings': settings,
+          'commands': commands,
         }),
       );
+      if (verbose) {
+        parseResponse(response);
+      }
       return jsonDecode(response.body);
     } catch (e) {
       return handleError(e);
@@ -867,11 +263,14 @@ class AGiXTSDK {
   Future<String> renameAgent(String agentName, String newName) async {
     try {
       final response = await http.patch(
-        Uri.parse("$baseUri/api/agent/$agentName"),
+        Uri.parse('$baseUri/api/agent/$agentName'),
         headers: headers,
-        body: jsonEncode({"new_name": newName}),
+        body: jsonEncode({'new_name': newName}),
       );
-      return jsonDecode(response.body);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -880,11 +279,14 @@ class AGiXTSDK {
   Future<String> updateAgentSettings(String agentName, Map<String, dynamic> settings) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/agent/$agentName"),
+        Uri.parse('$baseUri/api/agent/$agentName'),
         headers: headers,
-        body: jsonEncode({"settings": settings, "agent_name": agentName}),
+        body: jsonEncode({'settings': settings, 'agent_name': agentName}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -893,11 +295,14 @@ class AGiXTSDK {
   Future<String> updateAgentCommands(String agentName, Map<String, dynamic> commands) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/agent/$agentName/commands"),
+        Uri.parse('$baseUri/api/agent/$agentName/commands'),
         headers: headers,
-        body: jsonEncode({"commands": commands, "agent_name": agentName}),
+        body: jsonEncode({'commands': commands, 'agent_name': agentName}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -905,8 +310,14 @@ class AGiXTSDK {
 
   Future<String> deleteAgent(String agentName) async {
     try {
-      final response = await http.delete(Uri.parse("$baseUri/api/agent/$agentName"), headers: headers);
-      return jsonDecode(response.body)["message"];
+      final response = await http.delete(
+        Uri.parse('$baseUri/api/agent/$agentName'),
+        headers: headers,
+      );
+      if (verbose ) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -914,8 +325,14 @@ class AGiXTSDK {
 
   Future<List<Map<String, dynamic>>> getAgents() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/agent"), headers: headers);
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["agents"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/agent'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)['agents']);
     } catch (e) {
       return handleError(e);
     }
@@ -923,17 +340,29 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getAgentConfig(String agentName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/agent/$agentName"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["agent"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/agent/$agentName'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['agent']);
     } catch (e) {
       return handleError(e);
     }
   }
 
-  Future<List<String>> getConversations({String agentName = ""}) async {
+  Future<List<String>> getConversations({String agentName = ''}) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/conversations"), headers: headers);
-      return List<String>.from(jsonDecode(response.body)["conversations"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/conversations'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['conversations']);
     } catch (e) {
       return handleError(e);
     }
@@ -941,8 +370,14 @@ class AGiXTSDK {
 
   Future<List<String>> getConversationsWithIds() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/conversations"), headers: headers);
-      return List<String>.from(jsonDecode(response.body)["conversations_with_ids"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/conversations'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['conversations_with_ids']);
     } catch (e) {
       return handleError(e);
     }
@@ -956,16 +391,35 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/conversation"),
+        Uri.parse('$baseUri/api/conversation'),
         headers: headers,
         body: jsonEncode({
-          "conversation_name": conversationName,
-          "agent_name": agentName,
-          "limit": limit,
-          "page": page,
+          'conversation_name': conversationName,
+          'agent_name': agentName,
+          'limit': limit,
+          'page': page,
         }),
       );
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversation_history"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)['conversation_history']);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<String> forkConversation(String conversationName, String messageId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUri/api/conversation/fork'),
+        headers: headers,
+        body: jsonEncode({'conversation_name': conversationName, 'message_id': messageId}),
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -978,15 +432,18 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/conversation"),
+        Uri.parse('$baseUri/api/conversation'),
         headers: headers,
         body: jsonEncode({
-          "conversation_name": conversationName,
-          "agent_name": agentName,
-          "conversation_content": conversationContent,
+          'conversation_name': conversationName,
+          'agent_name': agentName,
+          'conversation_content': conversationContent,
         }),
       );
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["conversation_history"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)['conversation_history']);
     } catch (e) {
       return handleError(e);
     }
@@ -995,19 +452,22 @@ class AGiXTSDK {
   Future<String> renameConversation(
     String agentName,
     String conversationName, {
-    String newName = "-",
+    String newName = '-',
   }) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/conversation"),
+        Uri.parse('$baseUri/api/conversation'),
         headers: headers,
         body: jsonEncode({
-          "conversation_name": conversationName,
-          "new_conversation_name": newName,
-          "agent_name": agentName,
+          'conversation_name': conversationName,
+          'new_conversation_name': newName,
+          'agent_name': agentName,
         }),
       );
-      return jsonDecode(response.body)["conversation_name"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['conversation_name'];
     } catch (e) {
       return handleError(e);
     }
@@ -1016,31 +476,37 @@ class AGiXTSDK {
   Future<String> deleteConversation(String agentName, String conversationName) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/conversation"),
+        Uri.parse('$baseUri/api/conversation'),
         headers: headers,
         body: jsonEncode({
-          "conversation_name": conversationName,
-          "agent_name": agentName,
+          'conversation_name': conversationName,
+          'agent_name': agentName,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
   }
 
-  Future<String> deleteConversationMessage(String agentName, String conversationName, String message) async {
+  Future<String> deleteConversationMessage (String agentName, String conversationName, String message) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/conversation/message"),
+        Uri.parse('$baseUri/api/conversation/message'),
         headers: headers,
         body: jsonEncode({
-          "message": message,
-          "agent_name": agentName,
-          "conversation_name": conversationName,
+          'message': message,
+          'agent_name': agentName,
+          'conversation_name': conversationName,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1049,37 +515,43 @@ class AGiXTSDK {
   Future<String> updateConversationMessage(String agentName, String conversationName, String message, String newMessage) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/conversation/message"),
+        Uri.parse('$baseUri/api/conversation/message'),
         headers: headers,
         body: jsonEncode({
-          "message": message,
-          "new_message": newMessage,
-          "agent_name": agentName,
-          "conversation_name": conversationName,
+          'message': message,
+          'new_message': newMessage,
+          'agent_name': agentName,
+          'conversation_name': conversationName,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
   }
 
   Future<String> newConversationMessage({
-    String role = "user",
-    String message = "",
-    String conversationName = "",
+    String role = 'user',
+    String message = '',
+    String conversationName = '',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/conversation/message"),
+        Uri.parse('$baseUri/api/conversation/message'),
         headers: headers,
         body: jsonEncode({
-          "role": role,
-          "message": message,
-          "conversation_name": conversationName,
+          'role': role,
+          'message': message,
+          'conversation_name': conversationName,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1092,14 +564,17 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/prompt"),
+        Uri.parse('$baseUri/api/agent/$agentName/prompt'),
         headers: headers,
         body: jsonEncode({
-          "prompt_name": promptName,
-          "prompt_args": promptArgs,
+          'prompt_name': promptName,
+          'prompt_args': promptArgs,
         }),
       );
-      return jsonDecode(response.body)["response"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['response'];
     } catch (e) {
       return handleError(e);
     }
@@ -1108,11 +583,11 @@ class AGiXTSDK {
   Future<String> instruct(String agentName, String userInput, String conversation) async {
     return promptAgent(
       agentName: agentName,
-      promptName: "instruct",
+      promptName: 'instruct',
       promptArgs: {
-        "user_input": userInput,
-        "disable_memory": true,
-        "conversation_name": conversation,
+        'user_input': userInput,
+        'disable_memory': true,
+        'conversation_name': conversation,
       },
     );
   }
@@ -1125,48 +600,54 @@ class AGiXTSDK {
   }) async {
     return promptAgent(
       agentName: agentName,
-      promptName: "Chat",
+      promptName: 'Chat',
       promptArgs: {
-        "user_input": userInput,
-        "context_results": contextResults,
-        "conversation_name": conversation,
-        "disable_memory": true,
+        'user_input': userInput,
+        'context_results': contextResults,
+        'conversation_name': conversation,
+        'disable_memory': true,
       },
     );
   }
 
   Future<String> smartInstruct(String agentName, String userInput, String conversation) async {
     return runChain(
-      chainName: "Smart Instruct",
+      chainName: 'Smart Instruct',
       userInput: userInput,
       agentName: agentName,
       allResponses: false,
       fromStep: 1,
       chainArgs: {
-        "conversation_name": conversation,
-        "disable_memory": true,
+        'conversation_name': conversation,
+        'disable_memory': true,
       },
     );
   }
 
   Future<String> smartChat(String agentName, String userInput, String conversation) async {
     return runChain(
-      chainName: "Smart Chat",
+      chainName: 'Smart Chat',
       userInput: userInput,
       agentName: agentName,
       allResponses: false,
       fromStep: 1,
       chainArgs: {
-        "conversation_name": conversation,
-        "disable_memory": true,
+        'conversation_name': conversation,
+        'disable_memory': true,
       },
     );
   }
 
   Future<Map<String, Map<String, bool>>> getCommands(String agentName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/agent/$agentName/command"), headers: headers);
-      return Map<String, Map<String, bool>>.from(jsonDecode(response.body)["commands"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/agent/$agentName/command'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, Map<String, bool>>.from(jsonDecode(response.body)['commands']);
     } catch (e) {
       return handleError(e);
     }
@@ -1175,14 +656,17 @@ class AGiXTSDK {
   Future<String> toggleCommand(String agentName, String commandName, bool enable) async {
     try {
       final response = await http.patch(
-        Uri.parse("$baseUri/api/agent/$agentName/command"),
+        Uri.parse('$baseUri/api/agent/$agentName/command'),
         headers: headers,
         body: jsonEncode({
-          "command_name": commandName,
-          "enable": enable,
+          'command_name': commandName,
+          'enable': enable,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1192,19 +676,22 @@ class AGiXTSDK {
     String agentName,
     String commandName,
     Map<String, dynamic> commandArgs, {
-    String conversationName = "AGiXT Terminal Command Execution",
+    String conversationName = 'AGiXT Terminal Command Execution',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/command"),
+        Uri.parse('$baseUri/api/agent/$agentName/command'),
         headers: headers,
         body: jsonEncode({
-          "command_name": commandName,
-          "command_args": commandArgs,
-          "conversation_name": conversationName,
+          'command_name': commandName,
+          'command_args': commandArgs,
+          'conversation_name': conversationName,
         }),
       );
-      return jsonDecode(response.body)["response"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['response'];
     } catch (e) {
       return handleError(e);
     }
@@ -1212,7 +699,13 @@ class AGiXTSDK {
 
   Future<List<String>> getChains() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/chain"), headers: headers);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/chain'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
       return List<String>.from(jsonDecode(response.body));
     } catch (e) {
       return handleError(e);
@@ -1221,8 +714,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getChain(String chainName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/chain/$chainName"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["chain"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/chain/$chainName'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['chain']);
     } catch (e) {
       return handleError(e);
     }
@@ -1230,8 +729,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getChainResponses(String chainName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/chain/$chainName/responses"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["chain"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/chain/$chainName/responses'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['chain']);
     } catch (e) {
       return handleError(e);
     }
@@ -1239,8 +744,14 @@ class AGiXTSDK {
 
   Future<List<String>> getChainArgs(String chainName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/chain/$chainName/args"), headers: headers);
-      return List<String>.from(jsonDecode(response.body)["chain_args"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/chain/$chainName/args'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['chain_args']);
     } catch (e) {
       return handleError(e);
     }
@@ -1249,23 +760,26 @@ class AGiXTSDK {
   Future<dynamic> runChain({
     required String chainName,
     required String userInput,
-    String agentName = "",
+    String agentName = '',
     bool allResponses = false,
     int fromStep = 1,
     Map<String, dynamic> chainArgs = const {},
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/chain/$chainName/run"),
+        Uri.parse('$baseUri/api/chain/$chainName/run'),
         headers: headers,
         body: jsonEncode({
-          "prompt": userInput,
-          "agent_override": agentName,
-          "all_responses": allResponses,
-          "from_step": fromStep,
-          "chain_args": chainArgs,
+          'prompt': userInput,
+          'agent_name': agentName,
+          'all_responses': allResponses,
+          'from_step': fromStep,
+          'chain_args': chainArgs,
         }),
       );
+      if (verbose) {
+        parseResponse(response);
+      }
       return jsonDecode(response.body);
     } catch (e) {
       return handleError(e);
@@ -1281,14 +795,17 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/chain/$chainName/run/step/$stepNumber"),
+        Uri.parse('$baseUri/api/chain/$chainName/run/step/$stepNumber'),
         headers: headers,
         body: jsonEncode({
-          "prompt": userInput,
-          "agent_override": agentName,
-          "chain_args": chainArgs,
+          'prompt': userInput,
+          'agent_name': agentName,
+          'chain_args': chainArgs,
         }),
       );
+      if (verbose) {
+        parseResponse(response);
+      }
       return jsonDecode(response.body);
     } catch (e) {
       return handleError(e);
@@ -1298,11 +815,14 @@ class AGiXTSDK {
   Future<String> addChain(String chainName) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/chain"),
+        Uri.parse('$baseUri/api/chain'),
         headers: headers,
-        body: jsonEncode({"chain_name": chainName}),
+        body: jsonEncode({'chain_name': chainName}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1311,24 +831,30 @@ class AGiXTSDK {
   Future<String> importChain(String chainName, Map<String, dynamic> steps) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/chain/import"),
+        Uri.parse('$baseUri/api/chain/import'),
         headers: headers,
-        body: jsonEncode({"chain_name": chainName, "steps": steps}),
+        body: jsonEncode({'chain_name': chainName, 'steps': steps}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
   }
 
   Future<String> renameChain(String chainName, String newName) async {
-    try {
+ try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/chain/$chainName"),
+        Uri.parse('$baseUri/api/chain/$chainName'),
         headers: headers,
-        body: jsonEncode({"new_name": newName}),
+        body: jsonEncode({'new_name': newName}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1336,8 +862,14 @@ class AGiXTSDK {
 
   Future<String> deleteChain(String chainName) async {
     try {
-      final response = await http.delete(Uri.parse("$baseUri/api/chain/$chainName"), headers: headers);
-      return jsonDecode(response.body)["message"];
+      final response = await http.delete(
+        Uri.parse('$baseUri/api/chain/$chainName'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1352,16 +884,19 @@ class AGiXTSDK {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/chain/$chainName/step"),
+        Uri.parse('$baseUri/api/chain/$chainName/step'),
         headers: headers,
         body: jsonEncode({
-          "step_number": stepNumber,
-          "agent_name": agentName,
-          "prompt_type": promptType,
-          "prompt": prompt,
+          'step_number': stepNumber,
+          'agent_name': agentName,
+          'prompt_type': promptType,
+          'prompt': prompt,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1376,16 +911,19 @@ class AGiXTSDK {
   ) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/chain/$chainName/step/$stepNumber"),
+        Uri.parse('$baseUri/api/chain/$chainName/step/$stepNumber'),
         headers: headers,
         body: jsonEncode({
-          "step_number": stepNumber,
-          "agent_name": agentName,
-          "prompt_type": promptType,
-          "prompt": prompt,
+          'step_number': stepNumber,
+          'agent_name': agentName,
+          'prompt_type': promptType,
+          'prompt': prompt,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1398,14 +936,17 @@ class AGiXTSDK {
   ) async {
     try {
       final response = await http.patch(
-        Uri.parse("$baseUri/api/chain/$chainName/step/move"),
+        Uri.parse('$baseUri/api/chain/$chainName/step/move'),
         headers: headers,
         body: jsonEncode({
-          "old_step_number": oldStepNumber,
-          "new_step_number": newStepNumber,
+          'old_step_number': oldStepNumber,
+          'new_step_number': newStepNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1414,10 +955,13 @@ class AGiXTSDK {
   Future<String> deleteStep(String chainName, int stepNumber) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/chain/$chainName/step/$stepNumber"),
+        Uri.parse('$baseUri/api/chain/$chainName/step/$stepNumber'),
         headers: headers,
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1426,18 +970,21 @@ class AGiXTSDK {
   Future<String> addPrompt(
     String promptName,
     String prompt, {
-    String promptCategory = "Default",
+    String promptCategory = 'Default',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/prompt/$promptCategory"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory'),
         headers: headers,
         body: jsonEncode({
-          "prompt_name": promptName,
-          "prompt": prompt,
+          'prompt_name': promptName,
+          'prompt': prompt,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1445,26 +992,32 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getPrompt(
     String promptName, {
-    String promptCategory = "Default",
+    String promptCategory = 'Default',
   }) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/prompt/$promptCategory/$promptName"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory/$promptName'),
         headers: headers,
       );
-      return Map<String, dynamic>.from(jsonDecode(response.body)["prompt"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['prompt']);
     } catch (e) {
       return handleError(e);
     }
   }
 
-  Future<List<String>> getPrompts({String promptCategory = "Default"}) async {
+  Future<List<String>> getPrompts({String promptCategory = 'Default'}) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/prompt/$promptCategory"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory'),
         headers: headers,
       );
-      return List<String>.from(jsonDecode(response.body)["prompts"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['prompts']);
     } catch (e) {
       return handleError(e);
     }
@@ -1473,10 +1026,13 @@ class AGiXTSDK {
   Future<List<String>> getPromptCategories() async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/prompt/categories"),
+        Uri.parse('$base Uri/api/prompt/categories'),
         headers: headers,
       );
-      return List<String>.from(jsonDecode(response.body)["prompt_categories"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['prompt_categories']);
     } catch (e) {
       return handleError(e);
     }
@@ -1484,14 +1040,17 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getPromptArgs(
     String promptName, {
-    String promptCategory = "Default",
+    String promptCategory = 'Default',
   }) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/prompt/$promptCategory/$promptName/args"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory/$promptName/args'),
         headers: headers,
       );
-      return Map<String, dynamic>.from(jsonDecode(response.body)["prompt_args"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['prompt_args']);
     } catch (e) {
       return handleError(e);
     }
@@ -1499,14 +1058,17 @@ class AGiXTSDK {
 
   Future<String> deletePrompt(
     String promptName, {
-    String promptCategory = "Default",
+    String promptCategory = 'Default',
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/prompt/$promptCategory/$promptName"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory/$promptName'),
         headers: headers,
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1515,19 +1077,22 @@ class AGiXTSDK {
   Future<String> updatePrompt(
     String promptName,
     String prompt, {
-    String promptCategory = "Default",
+    String promptCategory = 'Default',
   }) async {
     try {
       final response = await http.put(
-        Uri.parse("$baseUri/api/prompt/$promptCategory/$promptName"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory/$promptName'),
         headers: headers,
         body: jsonEncode({
-          "prompt": prompt,
-          "prompt_name": promptName,
-          "prompt_category": promptCategory,
+          'prompt': prompt,
+          'prompt_name': promptName,
+          'prompt_category': promptCategory,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1536,15 +1101,18 @@ class AGiXTSDK {
   Future<String> renamePrompt(
     String promptName,
     String newName, {
-    String promptCategory = "Default",
+    String promptCategory = 'Default',
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse("$baseUri/api/prompt/$promptCategory/$promptName"),
+        Uri.parse('$baseUri/api/prompt/$promptCategory/$promptName'),
         headers: headers,
-        body: jsonEncode({"prompt_name": newName}),
+        body: jsonEncode({'prompt_name': newName}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1552,8 +1120,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getExtensionSettings() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/extensions/settings"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["extension_settings"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/extensions/settings'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['extension_settings']);
     } catch (e) {
       return handleError(e);
     }
@@ -1561,8 +1135,14 @@ class AGiXTSDK {
 
   Future<List<dynamic>> getExtensions() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/extensions"), headers: headers);
-      return jsonDecode(response.body)["extensions"];
+      final response = await http.get(
+        Uri.parse('$baseUri/api/extensions'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['extensions'];
     } catch (e) {
       return handleError(e);
     }
@@ -1570,8 +1150,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getCommandArgs(String commandName) async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/extensions/$commandName/args"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["command_args"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/extensions/$commandName/args'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['command_args']);
     } catch (e) {
       return handleError(e);
     }
@@ -1579,8 +1165,14 @@ class AGiXTSDK {
 
   Future<Map<String, dynamic>> getEmbeddersDetails() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/embedders"), headers: headers);
-      return Map<String, dynamic>.from(jsonDecode(response.body)["embedders"]);
+      final response = await http.get(
+        Uri.parse('$baseUri/api/embedders'),
+        headers: headers,
+      );
+      if (verbose) {
+        parseResponse(response);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body)['embedders']);
     } catch (e) {
       return handleError(e);
     }
@@ -1591,21 +1183,24 @@ class AGiXTSDK {
     String message,
     String userInput,
     String feedback, {
-    String conversationName = "",
+    String conversationName = '',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/feedback"),
+        Uri.parse('$baseUri/api/agent/$agentName/feedback'),
         headers: headers,
         body: jsonEncode({
-          "user_input": userInput,
-          "message": message,
-          "feedback": feedback,
-          "positive": true,
-          "conversation_name": conversationName,
+          'user_input': userInput,
+          'message': message,
+          'feedback': feedback,
+          'positive': true,
+          'conversation_name': conversationName,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1616,21 +1211,24 @@ class AGiXTSDK {
     String message,
     String userInput,
     String feedback, {
-    String conversationName = "",
+    String conversationName = '',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/feedback"),
+        Uri.parse('$baseUri/api/agent/$agentName/feedback'),
         headers: headers,
         body: jsonEncode({
-          "user_input": userInput,
-          "message": message,
-          "feedback": feedback,
-          "positive": false,
-          "conversation_name": conversationName,
+          'user_input': userInput,
+          'message': message,
+          'feedback': feedback,
+          'positive': false,
+          'conversation_name': conversationName,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1640,19 +1238,22 @@ class AGiXTSDK {
     String agentName,
     String userInput,
     String text, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/learn/text"),
+        Uri.parse('$baseUri/api/agent/$agentName/learn/text'),
         headers: headers,
         body: jsonEncode({
-          "user_input": userInput,
-          "text": text,
-          "collection_number": collectionNumber,
+          'user_input': userInput,
+          'text': text,
+          'collection_number': collectionNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1661,19 +1262,23 @@ class AGiXTSDK {
   Future<String> learnUrl(
     String agentName,
     String url, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/learn/url"),
+        Uri.parse('$baseUri/api/agent/$agentName/learn/url'),
         headers: headers,
         body: jsonEncode({
-          "url": url,
-          "collection_number": collectionNumber,
+          'url': url,
+          'collection_number': collectionNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
-    } catch (e) {return handleError(e);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
+    } catch (e) {
+      return handleError(e);
     }
   }
 
@@ -1681,19 +1286,22 @@ class AGiXTSDK {
     String agentName,
     String fileName,
     String fileContent, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/learn/file"),
+        Uri.parse('$baseUri/api/agent/$agentName/learn/file'),
         headers: headers,
         body: jsonEncode({
-          "file_name": fileName,
-          "file_content": fileContent,
-          "collection_number": collectionNumber,
+          'file_name': fileName,
+          'file_content': fileContent,
+          'collection_number': collectionNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1704,24 +1312,27 @@ class AGiXTSDK {
     String githubRepo, {
     String? githubUser,
     String? githubToken,
-    String githubBranch = "main",
+    String githubBranch = 'main',
     bool useAgentSettings = false,
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/learn/github"),
+        Uri.parse('$baseUri/api/agent/$agentName/learn/github'),
         headers: headers,
         body: jsonEncode({
-          "github_repo": githubRepo,
-          "github_user": githubUser,
-          "github_token": githubToken,
-          "github_branch": githubBranch,
-          "collection_number": collectionNumber,
-          "use_agent_settings": useAgentSettings,
+          'github_repo': githubRepo,
+          'github_user': githubUser,
+          'github_token': githubToken,
+          'github_branch': githubBranch,
+          'use_agent_settings': useAgentSettings,
+          'collection_number': collectionNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1732,20 +1343,23 @@ class AGiXTSDK {
     String? query,
     String? arxivIds,
     int maxResults = 5,
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/learn/arxiv"),
+        Uri.parse('$baseUri/api/agent/$agentName/learn/arxiv'),
         headers: headers,
         body: jsonEncode({
-          "query": query,
-          "arxiv_ids": arxivIds,
-          "max_results": maxResults,
-          "collection_number": collectionNumber,
+          'query': query,
+          'arxiv_ids': arxivIds,
+          'max_results': maxResults,
+          'collection_number': collectionNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1755,18 +1369,21 @@ class AGiXTSDK {
     String agentName,
     String readerName,
     Map<String, dynamic> data, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
-    if (!data.containsKey("collection_number")) {
-      data["collection_number"] = collectionNumber;
+    if (!data.containsKey('collection_number')) {
+      data['collection_number'] = collectionNumber;
     }
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/reader/$readerName"),
+        Uri.parse('$baseUri/api/agent/$agentName/reader/$readerName'),
         headers: headers,
         body: jsonEncode(data),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1774,16 +1391,19 @@ class AGiXTSDK {
 
   Future<String> wipeAgentMemories(
     String agentName, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse(collectionNumber == "0"
-            ? "$baseUri/api/agent/$agentName/memory"
-            : "$baseUri/api/agent/$agentName/memory/$collectionNumber"),
+        Uri.parse(collectionNumber == '0'
+            ? '$baseUri/api/agent/$agentName/memory'
+            : '$baseUri/api/agent/$agentName/memory/$collectionNumber'),
         headers: headers,
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1792,14 +1412,17 @@ class AGiXTSDK {
   Future<String> deleteAgentMemory(
     String agentName,
     String memoryId, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/$collectionNumber/$memoryId"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/$collectionNumber/$memoryId'),
         headers: headers,
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1810,19 +1433,22 @@ class AGiXTSDK {
     String userInput, {
     int limit = 5,
     double minRelevanceScore = 0.0,
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/$collectionNumber/query"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/$collectionNumber/query'),
         headers: headers,
         body: jsonEncode({
-          "user_input": userInput,
-          "limit": limit,
-          "min_relevance_score": minRelevanceScore,
+          'user_input': userInput,
+          'limit': limit,
+          'min_relevance_score': minRelevanceScore,
         }),
       );
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["memories"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)['memories']);
     } catch (e) {
       return handleError(e);
     }
@@ -1831,10 +1457,13 @@ class AGiXTSDK {
   Future<List<Map<String, dynamic>>> exportAgentMemories(String agentName) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/export"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/export'),
         headers: headers,
       );
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body)["memories"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body)['memories']);
     } catch (e) {
       return handleError(e);
     }
@@ -1843,14 +1472,17 @@ class AGiXTSDK {
   Future<String> importAgentMemories(
     String agentName,
     List<Map<String, dynamic>> memories,
-  ) async {
+  }) async {
     try {
-      final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/import"),
+ final response = await http.post(
+        Uri.parse('$baseUri/api/agent/$agentName/memory/import'),
         headers: headers,
-        body: jsonEncode({"memories": memories}),
+        body: jsonEncode({'memories': memories}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1863,11 +1495,14 @@ class AGiXTSDK {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/dataset"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/dataset'),
         headers: headers,
-        body: jsonEncode({"dataset_name": datasetName, "batch_size": batchSize}),
+        body: jsonEncode({'dataset_name': datasetName, 'batch_size': batchSize}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1875,14 +1510,17 @@ class AGiXTSDK {
 
   Future<List<String>> getBrowsedLinks(
     String agentName, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/agent/$agentName/browsed_links/$collectionNumber"),
+        Uri.parse('$baseUri/api/agent/$agentName/browsed_links/$collectionNumber'),
         headers: headers,
       );
-      return List<String>.from(jsonDecode(response.body)["links"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['links']);
     } catch (e) {
       return handleError(e);
     }
@@ -1891,15 +1529,18 @@ class AGiXTSDK {
   Future<String> deleteBrowsedLink(
     String agentName,
     String link, {
-    String collectionNumber = "0",
+    String collectionNumber = '0',
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/agent/$agentName/browsed_links"),
+        Uri.parse('$baseUri/api/agent/$agentName/browsed_links'),
         headers: headers,
-        body: jsonEncode({"link": link, "collection_number": collectionNumber}),
+        body: jsonEncode({'link': link, 'collection_number': collectionNumber}),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1908,13 +1549,16 @@ class AGiXTSDK {
   Future<List<String>> getMemoriesExternalSources(
     String agentName,
     String collectionNumber,
-  ) async {
+  }) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/external_sources/$collectionNumber"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/external_sources/$collectionNumber'),
         headers: headers,
       );
-      return List<String>.from(jsonDecode(response.body)["external_sources"]);
+      if (verbose) {
+        parseResponse(response);
+      }
+      return List<String>.from(jsonDecode(response.body)['external_sources']);
     } catch (e) {
       return handleError(e);
     }
@@ -1924,42 +1568,48 @@ class AGiXTSDK {
     String agentName,
     String source,
     String collectionNumber,
-  ) async {
+  }) async {
     try {
       final response = await http.delete(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/external_source"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/external_source'),
         headers: headers,
         body: jsonEncode({
-          "external_source": source,
-          "collection_number": collectionNumber,
+          'external_source': source,
+          'collection_number': collectionNumber,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
   }
 
   Future<String> train({
-    String agentName = "AGiXT",
-    String datasetName = "dataset",
-    String model = "unsloth/mistral-7b-v0.2",
+    String agentName = 'AGiXT',
+    String datasetName = 'dataset',
+    String model = 'unsloth/mistral-7b-v0.2',
     int maxSeqLength = 16384,
-    String huggingfaceOutputPath = "JoshXT/finetuned-mistral-7b-v0.2",
+    String huggingfaceOutputPath = 'JoshXT/finetuned-mistral-7b-v0.2',
     bool privateRepo = true,
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/memory/dataset/$datasetName/finetune"),
+        Uri.parse('$baseUri/api/agent/$agentName/memory/dataset/$datasetName/finetune'),
         headers: headers,
         body: jsonEncode({
-          "model": model,
-          "max_seq_length": maxSeqLength,
-          "huggingface_output_path": huggingfaceOutputPath,
-          "private_repo": privateRepo,
+          'model': model,
+          'max_seq_length': maxSeqLength,
+          'huggingface_output_path': huggingfaceOutputPath,
+          'private_repo': privateRepo,
         }),
       );
-      return jsonDecode(response.body)["message"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['message'];
     } catch (e) {
       return handleError(e);
     }
@@ -1968,11 +1618,14 @@ class AGiXTSDK {
   Future<String> textToSpeech(String agentName, String text) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/text_to_speech"),
+        Uri.parse('$baseUri/api/agent/$agentName/text_to_speech'),
         headers: headers,
-        body: jsonEncode({"text": text}),
+        body: jsonEncode({'text': text}),
       );
-      return jsonDecode(response.body)["url"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['url'];
     } catch (e) {
       return handleError(e);
     }
@@ -1981,41 +1634,41 @@ class AGiXTSDK {
   Future<Map<String, dynamic>> chatCompletions(
     ChatCompletions prompt,
     Future<String> Function(String) func,
-  ) async {
+  }) async {
     String agentName = prompt.model;
-    String conversationName = prompt.user ?? "-";
+    String conversationName = prompt.user ?? '-';
     Map<String, dynamic> agentConfig = await getAgentConfig(agentName);
-    Map<String, dynamic> agentSettings = agentConfig["settings"] ?? {};
+    Map<String, dynamic> agentSettings = agentConfig['settings'] ?? {};
 
     bool tts = false;
-    if (agentSettings.containsKey("tts_provider")) {
-      String ttsProvider = agentSettings["tts_provider"].toString().toLowerCase();
-      if (ttsProvider != "none" && ttsProvider.isNotEmpty) {
+    if (agentSettings.containsKey('tts_provider')) {
+      String ttsProvider = agentSettings['tts_provider'].toString().toLowerCase();
+      if (ttsProvider != 'none' && ttsProvider.isNotEmpty) {
         tts = true;
       }
     }
 
-    String newPrompt = "";
+    String newPrompt = '';
     for (var message in prompt.messages ?? []) {
-      if (message.containsKey("tts")) {
-        tts = message["tts"].toString().toLowerCase() == "true";
+      if (message.containsKey('tts')) {
+        tts = message['tts'].toString().toLowerCase() == 'true';
       }
-      if (!message.containsKey("content")) continue;
+      if (!message.containsKey('content')) continue;
 
-      if (message["content"] is String) {
-        String role = message["role"] ?? "User";
-        if (role.toLowerCase() == "system" && message["content"].contains("/")) {
-          newPrompt += "${message['content']}\n\n";
+      if (message['content'] is String) {
+                String role = message['role'] ?? 'User';
+        if (role.toLowerCase() == 'system' && message['content'].contains('/')) {
+          newPrompt += '${message['content']}\n\n';
         }
-        if (role.toLowerCase() == "user") {
-          newPrompt += "${message['content']}\n\n";
+        if (role.toLowerCase() == 'user') {
+          newPrompt += '${message['content']}\n\n';
         }
-      } else if (message["content"] is List) {
-        for (var msg in message["content"]) {
-          if (msg.containsKey("text")) {
-            String role = message["role"] ?? "User";
-            if (role.toLowerCase() == "user") {
-              newPrompt += "${msg['text']}\n\n";
+      } else if (message['content'] is List) {
+        for (var msg in message['content']) {
+          if (msg.containsKey('text')) {
+            String role = message['role'] ?? 'User';
+            if (role.toLowerCase() == 'user') {
+              newPrompt += '${msg['text']}\n\n';
             }
           }
           // Handle image, audio, video, and file processing here
@@ -2027,7 +1680,7 @@ class AGiXTSDK {
     }
 
     await newConversationMessage(
-      role: "user",
+      role: 'user',
       message: newPrompt,
       conversationName: conversationName,
     );
@@ -2043,7 +1696,7 @@ class AGiXTSDK {
     if (tts) {
       await newConversationMessage(
         role: agentName,
-        message: "[ACTIVITY] Generating audio response.",
+        message: '[ACTIVITY] Generating audio response.',
         conversationName: conversationName,
       );
       String ttsResponse = await textToSpeech(agentName, response);
@@ -2057,24 +1710,24 @@ class AGiXTSDK {
     // Note: Token counting is not implemented here as it would require a Dart-specific solution
 
     return {
-      "id": conversationName,
-      "object": "chat.completion",
-      "created": DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      "model": agentName,
-      "choices": [
+      'id': conversationName,
+      'object': 'chat.completion',
+      'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      'model': agentName,
+      'choices': [
         {
-          "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": response,
+          'index': 0,
+          'message': {
+            'role': 'assistant',
+            'content': response,
           },
-          "finish_reason": "stop",
+          'finish_reason': 'stop',
         }
       ],
-      "usage": {
-        "prompt_tokens": newPrompt.length, // This is not accurate, just a placeholder
-        "completion_tokens": response.length, // This is not accurate, just a placeholder
-        "total_tokens": newPrompt.length + response.length, // This is not accurate, just a placeholder
+      'usage': {
+        'prompt_tokens': newPrompt.length, // This is not accurate, just a placeholder
+        'completion_tokens': response.length, // This is not accurate, just a placeholder
+        'total_tokens': newPrompt.length + response.length, // This is not accurate, just a placeholder
       },
     };
   }
@@ -2084,28 +1737,63 @@ class AGiXTSDK {
     String userInput, {
     bool websearch = false,
     int websearchDepth = 3,
-    String conversationName = "",
+    String conversationName = '',
     bool logUserInput = true,
     bool logOutput = true,
     bool enableNewCommand = true,
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUri/api/agent/$agentName/plan/task"),
+        Uri.parse('$baseUri/api/agent/$agentName/plan/task'),
         headers: headers,
         body: jsonEncode({
-          "user_input": userInput,
-          "websearch": websearch,
-          "websearch_depth": websearchDepth,
-          "conversation_name": conversationName,
-          "log_user_input": logUserInput,
-          "log_output": logOutput,
-          "enable_new_command": enableNewCommand,
+          'user_input': userInput,
+          'websearch': websearch,
+          'websearch_depth': websearchDepth,
+          'conversation_name': conversationName,
+          'log_user_input': logUserInput,
+          'log_output': logOutput,
+          'enable_new_command': enableNewCommand,
         }),
       );
-      return jsonDecode(response.body)["response"];
+      if (verbose) {
+        parseResponse(response);
+      }
+      return jsonDecode(response.body)['response'];
     } catch (e) {
       return handleError(e);
     }
   }
+
+  void parseResponse(http.Response response) {
+    print('Status Code: ${response.statusCode}');
+    print('Response JSON:');
+    if (response.statusCode == 200) {
+      print(jsonDecode(response.body));
+    } else {
+      print(response.body);
+      throw Exception('Failed to load data');
+    }
+    print('\n');
+  }
+
+  // Implement other methods as needed...
+}
+
+class TOTP {
+  final String secret;
+
+  TOTP(this.secret);
+
+  String now() {
+    // Implement the TOTP algorithm or use a library if available.
+    // This is a placeholder implementation.
+    return '123456';
+  }
+}
+
+void main() {
+  // Example usage
+  var sdk = AGiXTSDK(apiKey: 'your_api_key');
+  sdk.login('email@example.com', '123456');
 }
