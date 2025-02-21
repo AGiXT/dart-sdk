@@ -18,18 +18,17 @@
 This repository is for the [AGiXT](https://github.com/Josh-XT/AGiXT) SDK for Dart.
 
 ## More Documentation
-Want to know more about AGiXT?  Check out our [documentation](https://josh-xt.github.io/AGiXT/) or [GitHub](https://github.com/Josh-XT/AGiXT) page.
-
+Want to know more about AGiXT? Check out our [documentation](https://josh-xt.github.io/AGiXT/) or [GitHub](https://github.com/Josh-XT/AGiXT) page.
 
 **AGiXT SDK Documentation**
 
 **Overview**
 
-The AGiXT SDK is a Dart library that provides a set of APIs for interacting with the AGiXT platform. The SDK allows developers to create agents, manage conversations, and execute commands on the platform.
+The AGiXT SDK is a Dart library that provides a comprehensive set of APIs for interacting with the AGiXT platform. The SDK allows developers to create agents, manage conversations, execute commands, handle authentication, and utilize various AI capabilities including text generation, image generation, and speech processing.
 
 **Getting Started**
 
-To use the AGiXT SDK, you need to import the library and create an instance of the `AGiXTSDK` class, passing in the base URI and API key as parameters.
+To use the AGiXT SDK, you need to import the library and create an instance of the `AGiXTSDK` class:
 ```dart
 import 'agixt.dart';
 
@@ -40,83 +39,92 @@ void main() {
   );
 }
 ```
-**APIs**
 
-The AGiXT SDK provides a wide range of APIs for interacting with the platform. Here are some of the key APIs:
+**Authentication**
 
-### Agents
+* `login(String email, String otp)`: Log in with email and OTP
+* `registerUser(String email, String firstName, String lastName)`: Register a new user
+* `userExists(String email)`: Check if a user exists
+* `updateUser(Map<String, dynamic> userData)`: Update user details
+* `getUser()`: Get current user details
+* `oauth2Login(String provider, String code, {String? referrer})`: OAuth2 authentication
 
-* `getAgents()`: Retrieves a list of all agents on the platform.
-* `getAgentConfig(String agentName)`: Retrieves the configuration for a specific agent.
-* `addAgent(String agentName, Map<String, dynamic> settings)`: Creates a new agent with the specified settings.
-* `updateAgentSettings(String agentName, Map<String, dynamic> settings)`: Updates the settings for an existing agent.
-* `deleteAgent(String agentName)`: Deletes an agent from the platform.
+**Agents**
 
-### Conversations
+* `getAgents()`: Retrieves a list of all agents
+* `getAgentConfig(String agentName)`: Retrieves agent configuration
+* `addAgent(String agentName, {Map settings, Map commands, List trainingUrls})`: Creates a new agent
+* `updateAgentSettings(String agentName, Map settings)`: Updates agent settings
+* `deleteAgent(String agentName)`: Deletes an agent
+* `getPersona(String agentName)`: Get agent's persona
+* `updatePersona(String agentName, String persona)`: Update agent's persona
 
-* `getConversations(String agentName)`: Retrieves a list of conversations for a specific agent.
-* `getConversation(String agentName, String conversationName)`: Retrieves a specific conversation for an agent.
-* `newConversation(String agentName, String conversationName, List<Map<String, dynamic>> conversationContent)`: Creates a new conversation for an agent.
-* `deleteConversation(String agentName, String conversationName)`: Deletes a conversation from an agent.
+**Conversations**
 
-### Commands
+* `getConversations()`: Get all conversations
+* `getConversationsWithIds()`: Get conversations with their IDs
+* `getConversation(String agentName, String conversationName)`: Get specific conversation
+* `newConversation(String agentName, String conversationName)`: Create new conversation
+* `deleteConversation(String agentName, String conversationName)`: Delete conversation
+* `forkConversation(String conversationName, String messageId)`: Fork a conversation
+* `updateConversationMessageById(String messageId, String newMessage, String conversationName)`: Update message by ID
+* `deleteConversationMessageById(String messageId, String conversationName)`: Delete message by ID
 
-* `getCommands(String agentName)`: Retrieves a list of commands for a specific agent.
-* `executeCommand(String agentName, String commandName, Map<String, dynamic> commandArgs)`: Executes a command on an agent.
-* `addCommand(String agentName, String commandName, Map<String, dynamic> commandArgs)`: Adds a new command to an agent.
-* `updateCommand(String agentName, String commandName, Map<String, dynamic> commandArgs)`: Updates an existing command on an agent.
-* `deleteCommand(String agentName, String commandName)`: Deletes a command from an agent.
+**AI Capabilities**
 
-### Chains
+* `generateImage(String prompt, {String model, int n, String size, String responseFormat})`: Generate images
+* `transcribeAudio(String file, String model, {String? language, String? prompt})`: Transcribe audio to text
+* `translateAudio(String file, String model, {String? prompt})`: Translate audio
+* `textToSpeech(String agentName, String text)`: Convert text to speech
 
-* `getChains()`: Retrieves a list of all chains on the platform.
-* `getChain(String chainName)`: Retrieves a specific chain.
-* `addChain(String chainName)`: Creates a new chain.
-* `updateChain(String chainName, Map<String, dynamic> chainArgs)`: Updates an existing chain.
-* `deleteChain(String chainName)`: Deletes a chain from the platform.
+**Learning & Memory**
 
-### Prompts
+* `learnText(String agentName, String userInput, String text)`: Learn from text
+* `learnUrl(String agentName, String url)`: Learn from URL
+* `learnFile(String agentName, String fileName, String fileContent)`: Learn from file
+* `learnGithubRepo(String agentName, String githubRepo)`: Learn from GitHub repository
+* `learnArxiv({String agentName, String? query, String? arxivIds})`: Learn from arXiv papers
+* `getAgentMemories(String agentName, String userInput)`: Get agent memories
+* `exportAgentMemories(String agentName)`: Export memories
+* `importAgentMemories(String agentName, List<Map> memories)`: Import memories
+* `getUniqueExternalSources(String agentName)`: Get unique external sources
 
-* `getPrompts()`: Retrieves a list of all prompts on the platform.
-* `getPrompt(String promptName)`: Retrieves a specific prompt.
-* `addPrompt(String promptName, String prompt)`: Creates a new prompt.
-* `updatePrompt(String promptName, String prompt)`: Updates an existing prompt.
-* `deletePrompt(String promptName)`: Deletes a prompt from the platform.
+**Commands & Extensions**
 
-### Extensions
+* `getCommands(String agentName)`: Get available commands
+* `executeCommand(String agentName, String commandName, Map commandArgs)`: Execute command
+* `getExtensions()`: Get all extensions
+* `getExtensionSettings()`: Get extension settings
+* `createExtension(String agentName, String extensionName, String openapiJsonUrl)`: Create new extension
 
-* `getExtensionSettings()`: Retrieves the settings for all extensions on the platform.
-* `getExtensions()`: Retrieves a list of all extensions on the platform.
-* `getCommandArgs(String commandName)`: Retrieves the arguments for a specific command.
+**Chains & Prompts**
 
-### Learning
+* `getChains()`: Get all chains
+* `runChain({String chainName, String userInput, String agentName})`: Run a chain
+* `getPrompts({String promptCategory})`: Get prompts
+* `addPrompt(String promptName, String prompt)`: Add new prompt
+* `updatePrompt(String promptName, String prompt)`: Update prompt
 
-* `learnText(String agentName, String userInput, String text)`: Learns from a text input.
-* `learnUrl(String agentName, String url)`: Learns from a URL.
-* `learnFile(String agentName, String fileName, String fileContent)`: Learns from a file.
-* `learnGithubRepo(String agentName, String githubRepo)`: Learns from a GitHub repository.
+**Training**
 
-### Memory
-
-* `getAgentMemories(String agentName, String userInput)`: Retrieves a list of memories for an agent.
-* `exportAgentMemories(String agentName)`: Exports the memories for an agent.
-* `importAgentMemories(String agentName, List<Map<String, dynamic>> memories)`: Imports memories into an agent.
-
-### Dataset
-
-* `createDataset(String agentName, String datasetName)`: Creates a new dataset for an agent.
-* `train(String agentName, String datasetName)`: Trains a model on a dataset.
-
-### Text-to-Speech
-
-* `textToSpeech(String agentName, String text, String conversationName)`: Converts text to speech using an agent.
+* `createDataset(String agentName, String datasetName)`: Create training dataset
+* `train({String agentName, String datasetName, String model})`: Train on dataset
 
 **Error Handling**
 
-The AGiXT SDK provides a `handleError` function that can be used to handle errors that occur during API calls.
+The SDK includes comprehensive error handling:
 ```dart
-Future<String> handleError(error) {
-  print('Error: $error');
-  return 'Unable to retrieve data.';
+dynamic handleError(dynamic error) {
+  print("Error: $error");
+  throw Exception("Unable to retrieve data. $error");
 }
 ```
+
+All API methods are asynchronous and return Futures. Use try-catch blocks for proper error handling:
+```dart
+try {
+  final agents = await agixtSDK.getAgents();
+  print(agents);
+} catch (e) {
+  print('Error: $e');
+}
