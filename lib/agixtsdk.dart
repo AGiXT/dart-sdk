@@ -1,10 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io' show Directory, File;
 import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
-import 'package:path/path.dart' as path;
-import 'utils.dart';
+import 'tokenizer.dart';
 
 class ChatCompletions {
   String model;
@@ -40,30 +37,56 @@ class ChatCompletions {
   });
 }
 
-int getTokens(String text) {
-  // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for tiktoken
-  return text.length ~/ 4; // Very rough approximation
-}
 
 class AGiXTSDK {
   String baseUri;
   Map<String, String> headers;
 
-  AGiXTSDK({String? baseUri, String? apiKey}) 
-      : baseUri = baseUri ?? "http://localhost:7437",
+  final bool verbose;
+
+  AGiXTSDK({String? baseUri, String? apiKey, this.verbose = false})
+      : baseUri = baseUri?.replaceAll(RegExp(r'/$'), '') ?? "http://localhost:7437",
         headers = {
           "Content-Type": "application/json",
           if (apiKey != null) "Authorization": apiKey.replaceAll(RegExp(r'^(Bearer |bearer )'), ''),
         };
 
+  void parseResponse(http.Response response) {
+    if (verbose) {
+      print("Status Code: ${response.statusCode}");
+      print("Response JSON:");
+      if (response.statusCode == 200) {
+        print(jsonDecode(response.body));
+      } else {
+        print(response.body);
+        throw Exception("Request failed");
+      }
+      print("\n");
+    }
+  }
+
   dynamic handleError(dynamic error) {
-    print("Error: $error");
+    if (verbose) {
+      print("Error occurred:");
+      print(error);
+    }
     throw Exception("Unable to retrieve data. $error");
+  }
+  
+  Future<http.Response> _processResponse(http.Response response) async {
+    if (verbose) {
+      parseResponse(response);
+    }
+    return response;
   }
 
   Future<List<String>> getProviders() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/provider"), headers: headers);
+      final response = await http.get(Uri.parse("$baseUri/api/provider"), headers: headers)
+          .then(_processResponse);
+      if (verbose) {
+        print("Got providers response: ${response.body}");
+      }
       return List<String>.from(jsonDecode(response.body)["providers"]);
     } catch (e) {
       return handleError(e);
@@ -241,8 +264,8 @@ class AGiXTSDK {
     int page = 1,
   }) async {
     try {
-      final response = await http.get(
-        Uri.parse("$baseUri/api/conversation"),
+      final response = await http.post(
+        Uri.parse("$baseUri/api/conversation/query"),
         headers: headers,
         body: jsonEncode({
           "conversation_name": conversationName,
@@ -422,7 +445,7 @@ class AGiXTSDK {
   }
 
   Future<String> smartInstruct(String agentName, String userInput, String conversation) async {
-    return runChain(
+    final response = await runChain(
       chainName: "Smart Instruct",
       userInput: userInput,
       agentName: agentName,
@@ -433,20 +456,21 @@ class AGiXTSDK {
         "disable_memory": true,
       },
     );
+    return response.toString();
   }
-
-  Future<String> smartChat(String agentName, String userInput, String conversation) async {
-    return runChain(
-      chainName: "Smart Chat",
-      userInput: userInput,
-      agentName: agentName,
-      allResponses: false,
-      fromStep: 1,
-      chainArgs: {
-        "conversation_name": conversation,
-        "disable_memory": true,
-      },
-    );
+Future<String> smartChat(String agentName, String userInput, String conversation) async {
+  final response = await runChain(
+    chainName: "Smart Chat",
+    userInput: userInput,
+    agentName: agentName,
+    allResponses: false,
+    fromStep: 1,
+    chainArgs: {
+      "conversation_name": conversation,
+      "disable_memory": true,
+    },
+  );
+  return response.toString();
   }
 
   Future<Map<String, Map<String, bool>>> getCommands(String agentName) async {
@@ -1388,6 +1412,11 @@ class AGiXTSDK {
     Future<String> Function(String) func, {
     Future<String> Function(String)? asyncFunc,
   }) async {
+    if (verbose) {
+      print("Processing chat completion...");
+      print("Model: ${prompt.model}");
+      print("User: ${prompt.user}");
+    }
     String agentName = prompt.model;
     String conversationName = prompt.user ?? "-";
     Map<String, dynamic> agentConfig = await getAgentConfig(agentName);
@@ -1426,20 +1455,11 @@ class AGiXTSDK {
           }
           if (msg.containsKey("image_url")) {
             var url = msg["image_url"] is String ? msg["image_url"] : msg["image_url"]["url"];
-            var fileName = const Uuid().v4();
             
             if (url.startsWith("http")) {
-              final response = await http.get(Uri.parse(url));
-              final bytes = response.bodyBytes;
-              // Store bytes for reference - how this is done depends on platform
               print("[IMAGE] Processing image from URL: $url");
             } else {
               // Handle base64 image
-              var fileType = url.split(",")[0].split("/")[1].split(";")[0];
-              if (fileType == "jpeg") fileType = "jpg";
-              fileName = const Uuid().v4() + "." + fileType;
-              final bytes = base64.decode(url.split(",")[1]);
-              // Store bytes for reference - how this is done depends on platform
               print("[IMAGE] Processing base64 image");
             }
           }
@@ -1448,9 +1468,6 @@ class AGiXTSDK {
             var audioUrl = msg["audio_url"] is String ? msg["audio_url"] : msg["audio_url"]["url"];
             if (!audioUrl.startsWith("http")) {
               // Handle base64 audio
-              final fileType = audioUrl.split(",")[0].split("/")[1].split(";")[0];
-              final bytes = base64.decode(audioUrl.split(",")[1]);
-              // Store bytes for reference - how this is done depends on platform
               print("[AUDIO] Processing base64 audio");
             }
             // Note: Audio file conversion would be platform specific
@@ -1468,8 +1485,8 @@ class AGiXTSDK {
                 conversationName: conversationName,
               );
               await learnUrl(
-                agentName: agentName,
-                url: videoUrl,
+                agentName,
+                videoUrl,
                 collectionNumber: collectionNumber,
               );
             }
@@ -1492,8 +1509,8 @@ class AGiXTSDK {
                   conversationName: conversationName,
                 );
                 await learnUrl(
-                  agentName: agentName,
-                  url: fileUrl,
+                  agentName,
+                  fileUrl,
                   collectionNumber: collectionNumber,
                 );
               } else if (fileUrl.startsWith("https://github.com")) {
@@ -1503,8 +1520,8 @@ class AGiXTSDK {
                   conversationName: conversationName,
                 );
                 await learnGithubRepo(
-                  agentName: agentName,
-                  githubRepo: fileUrl,
+                  agentName,
+                  fileUrl,
                   githubUser: agentSettings["GITHUB_USER"],
                   githubToken: agentSettings["GITHUB_TOKEN"],
                   collectionNumber: collectionNumber,
@@ -1516,8 +1533,8 @@ class AGiXTSDK {
                   conversationName: conversationName,
                 );
                 await learnUrl(
-                  agentName: agentName,
-                  url: fileUrl,
+                  agentName,
+                  fileUrl,
                   collectionNumber: collectionNumber,
                 );
               }
@@ -1534,9 +1551,9 @@ class AGiXTSDK {
               );
               
               await learnFile(
-                agentName: agentName,
-                fileName: fileName,
-                fileContent: String.fromCharCodes(bytes),
+                agentName,
+                fileName,
+                String.fromCharCodes(bytes),
                 collectionNumber: collectionNumber,
               );
             }
@@ -1596,9 +1613,9 @@ class AGiXTSDK {
         }
       ],
       "usage": {
-        "prompt_tokens": newPrompt.length, // This is not accurate, just a placeholder
-        "completion_tokens": response.length, // This is not accurate, just a placeholder
-        "total_tokens": newPrompt.length + response.length, // This is not accurate, just a placeholder
+        "prompt_tokens": getTokens(newPrompt),
+        "completion_tokens": getTokens(response),
+        "total_tokens": getTokens(newPrompt) + getTokens(response),
       },
     };
   }
@@ -1674,7 +1691,6 @@ class AGiXTSDK {
       );
       final data = jsonDecode(response.body);
       if (data.containsKey("otp_uri")) {
-        String mfaToken = data["otp_uri"].toString().split("secret=")[1].split("&")[0];
         // Note: TOTP implementation would be needed here
         // For now, return the OTP URI for manual handling
         return data["otp_uri"];

@@ -20,30 +20,16 @@ dependencies:
   fake_async: ^1.3.2
   fixnum: ^1.1.1
   http_parser: ^4.1.2
-  leak_tracker: ^10.0.8
+  leak_tracker: 10.0.8
   typed_data: ^1.4.0
   web: ^1.1.0
-  material_color_utilities: ^0.11.1
+  material_color_utilities: 0.11.1
+  json_annotation: ^4.8.1
+  meta: ^1.12.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-
-flutter:
-  plugin:
-    platforms:
-      android:
-        package: com.agixt.sdk
-        pluginClass: Agixtsdk
-      ios:
-        pluginClass: AgixtssdkPlugin
-      linux:
-        pluginClass: AgixtssdkPlugin
-      macos:
-        pluginClass: AgixtssdkPlugin
-      windows:
-        pluginClass: AgixtssdkPluginCApi
-      web:
-        pluginClass: AgixtssdkWeb
-        fileName: agixtsdk_web.dart
+  json_serializable: ^6.7.1
+  build_runner: ^2.4.8
