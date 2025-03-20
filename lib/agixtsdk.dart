@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:io' show Directory, File;
 import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
+import 'tokenizer.dart';
 
 class ChatCompletions {
   String model;
@@ -37,30 +37,56 @@ class ChatCompletions {
   });
 }
 
-int getTokens(String text) {
-  // Note: This is a placeholder. You'll need to implement or find a Dart equivalent for tiktoken
-  return text.length ~/ 4; // Very rough approximation
-}
 
 class AGiXTSDK {
   String baseUri;
   Map<String, String> headers;
 
-  AGiXTSDK({String? baseUri, String? apiKey}) 
-      : baseUri = baseUri ?? "http://localhost:7437",
+  final bool verbose;
+
+  AGiXTSDK({String? baseUri, String? apiKey, this.verbose = false})
+      : baseUri = baseUri?.replaceAll(RegExp(r'/$'), '') ?? "http://localhost:7437",
         headers = {
           "Content-Type": "application/json",
           if (apiKey != null) "Authorization": apiKey.replaceAll(RegExp(r'^(Bearer |bearer )'), ''),
         };
 
+  void parseResponse(http.Response response) {
+    if (verbose) {
+      print("Status Code: ${response.statusCode}");
+      print("Response JSON:");
+      if (response.statusCode == 200) {
+        print(jsonDecode(response.body));
+      } else {
+        print(response.body);
+        throw Exception("Request failed");
+      }
+      print("\n");
+    }
+  }
+
   dynamic handleError(dynamic error) {
-    print("Error: $error");
+    if (verbose) {
+      print("Error occurred:");
+      print(error);
+    }
     throw Exception("Unable to retrieve data. $error");
+  }
+  
+  Future<http.Response> _processResponse(http.Response response) async {
+    if (verbose) {
+      parseResponse(response);
+    }
+    return response;
   }
 
   Future<List<String>> getProviders() async {
     try {
-      final response = await http.get(Uri.parse("$baseUri/api/provider"), headers: headers);
+      final response = await http.get(Uri.parse("$baseUri/api/provider"), headers: headers)
+          .then(_processResponse);
+      if (verbose) {
+        print("Got providers response: ${response.body}");
+      }
       return List<String>.from(jsonDecode(response.body)["providers"]);
     } catch (e) {
       return handleError(e);
@@ -238,8 +264,8 @@ class AGiXTSDK {
     int page = 1,
   }) async {
     try {
-      final response = await http.get(
-        Uri.parse("$baseUri/api/conversation"),
+      final response = await http.post(
+        Uri.parse("$baseUri/api/conversation/query"),
         headers: headers,
         body: jsonEncode({
           "conversation_name": conversationName,
@@ -419,7 +445,7 @@ class AGiXTSDK {
   }
 
   Future<String> smartInstruct(String agentName, String userInput, String conversation) async {
-    return runChain(
+    final response = await runChain(
       chainName: "Smart Instruct",
       userInput: userInput,
       agentName: agentName,
@@ -430,20 +456,21 @@ class AGiXTSDK {
         "disable_memory": true,
       },
     );
+    return response.toString();
   }
-
-  Future<String> smartChat(String agentName, String userInput, String conversation) async {
-    return runChain(
-      chainName: "Smart Chat",
-      userInput: userInput,
-      agentName: agentName,
-      allResponses: false,
-      fromStep: 1,
-      chainArgs: {
-        "conversation_name": conversation,
-        "disable_memory": true,
-      },
-    );
+Future<String> smartChat(String agentName, String userInput, String conversation) async {
+  final response = await runChain(
+    chainName: "Smart Chat",
+    userInput: userInput,
+    agentName: agentName,
+    allResponses: false,
+    fromStep: 1,
+    chainArgs: {
+      "conversation_name": conversation,
+      "disable_memory": true,
+    },
+  );
+  return response.toString();
   }
 
   Future<Map<String, Map<String, bool>>> getCommands(String agentName) async {
@@ -846,6 +873,40 @@ class AGiXTSDK {
     try {
       final response = await http.get(Uri.parse("$baseUri/api/extensions"), headers: headers);
       return jsonDecode(response.body)["extensions"];
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<List<dynamic>> getAgentExtensions(String agentName) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUri/api/agent/$agentName/extensions"),
+        headers: headers,
+      );
+      return jsonDecode(response.body)["extensions"];
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getDpoResponse(
+    String agentName,
+    String userInput, {
+    int injectedMemories = 10,
+    String conversationName = "",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUri/api/agent/$agentName/dpo"),
+        headers: headers,
+        body: jsonEncode({
+          "user_input": userInput,
+          "injected_memories": injectedMemories,
+          "conversation_name": conversationName,
+        }),
+      );
+      return jsonDecode(response.body);
     } catch (e) {
       return handleError(e);
     }
@@ -1261,10 +1322,101 @@ class AGiXTSDK {
     }
   }
 
+  Future<Map<String, dynamic>> transcribeAudio(
+    String file,
+    String model, {
+    String? language,
+    String? prompt,
+    String responseFormat = "json",
+    double temperature = 0.0,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse("$baseUri/v1/audio/transcriptions"),
+      );
+      request.headers.addAll(headers);
+      request.files.add(await http.MultipartFile.fromPath('file', file));
+      request.fields.addAll({
+        'model': model,
+        'response_format': responseFormat,
+        'temperature': temperature.toString(),
+      });
+      if (language != null) request.fields['language'] = language;
+      if (prompt != null) request.fields['prompt'] = prompt;
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> translateAudio(
+    String file,
+    String model, {
+    String? prompt,
+    String responseFormat = "json",
+    double temperature = 0.0,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse("$baseUri/v1/audio/translations"),
+      );
+      request.headers.addAll(headers);
+      request.files.add(await http.MultipartFile.fromPath('file', file));
+      request.fields.addAll({
+        'model': model,
+        'response_format': responseFormat,
+        'temperature': temperature.toString(),
+      });
+      if (prompt != null) request.fields['prompt'] = prompt;
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> generateImage(
+    String prompt, {
+    String model = "dall-e-3",
+    int n = 1,
+    String size = "1024x1024",
+    String responseFormat = "url",
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUri/v1/images/generations"),
+        headers: headers,
+        body: jsonEncode({
+          "model": model,
+          "prompt": prompt,
+          "n": n,
+          "size": size,
+          "response_format": responseFormat,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
   Future<Map<String, dynamic>> chatCompletions(
     ChatCompletions prompt,
-    Future<String> Function(String) func,
-  ) async {
+    Future<String> Function(String) func, {
+    Future<String> Function(String)? asyncFunc,
+  }) async {
+    if (verbose) {
+      print("Processing chat completion...");
+      print("Model: ${prompt.model}");
+      print("User: ${prompt.user}");
+    }
     String agentName = prompt.model;
     String conversationName = prompt.user ?? "-";
     Map<String, dynamic> agentConfig = await getAgentConfig(agentName);
@@ -1301,10 +1453,111 @@ class AGiXTSDK {
               newPrompt += "${msg['text']}\n\n";
             }
           }
-          // Handle image, audio, video, and file processing here
-          // This part would require significant adaptation and potentially
-          // additional Dart packages to handle file operations, base64 encoding/decoding,
-          // and potentially platform-specific code for mobile vs web.
+          if (msg.containsKey("image_url")) {
+            var url = msg["image_url"] is String ? msg["image_url"] : msg["image_url"]["url"];
+            
+            if (url.startsWith("http")) {
+              print("[IMAGE] Processing image from URL: $url");
+            } else {
+              // Handle base64 image
+              print("[IMAGE] Processing base64 image");
+            }
+          }
+          
+          if (msg.containsKey("audio_url")) {
+            var audioUrl = msg["audio_url"] is String ? msg["audio_url"] : msg["audio_url"]["url"];
+            if (!audioUrl.startsWith("http")) {
+              // Handle base64 audio
+              print("[AUDIO] Processing base64 audio");
+            }
+            // Note: Audio file conversion would be platform specific
+            print("[AUDIO] Audio processing would require platform-specific implementation");
+          }
+
+          if (msg.containsKey("video_url")) {
+            var videoUrl = msg["video_url"] is String ? msg["video_url"] : msg["video_url"]["url"];
+            String collectionNumber = msg["collection_number"]?.toString() ?? "0";
+            
+            if (videoUrl.startsWith("https://www.youtube.com/watch?v=")) {
+              await newConversationMessage(
+                role: agentName,
+                message: "[ACTIVITY] Learning video from YouTube.",
+                conversationName: conversationName,
+              );
+              await learnUrl(
+                agentName,
+                videoUrl,
+                collectionNumber: collectionNumber,
+              );
+            }
+          }
+
+          if (msg.containsKey("file_url") ||
+              msg.containsKey("application_url") ||
+              msg.containsKey("text_url") ||
+              msg.containsKey("url")) {
+            var fileUrl = msg["file_url"] ?? msg["application_url"] ?? msg["text_url"] ?? msg["url"];
+            fileUrl = fileUrl is String ? fileUrl : fileUrl["url"];
+            String collectionNumber = message["collection_number"]?.toString() ??
+                                    msg["collection_number"]?.toString() ?? "0";
+
+            if (fileUrl.startsWith("http")) {
+              if (fileUrl.startsWith("https://www.youtube.com/watch?v=")) {
+                await newConversationMessage(
+                  role: agentName,
+                  message: "[ACTIVITY] Learning video from YouTube.",
+                  conversationName: conversationName,
+                );
+                await learnUrl(
+                  agentName,
+                  fileUrl,
+                  collectionNumber: collectionNumber,
+                );
+              } else if (fileUrl.startsWith("https://github.com")) {
+                await newConversationMessage(
+                  role: agentName,
+                  message: "[ACTIVITY] Learning from GitHub.",
+                  conversationName: conversationName,
+                );
+                await learnGithubRepo(
+                  agentName,
+                  fileUrl,
+                  githubUser: agentSettings["GITHUB_USER"],
+                  githubToken: agentSettings["GITHUB_TOKEN"],
+                  collectionNumber: collectionNumber,
+                );
+              } else {
+                await newConversationMessage(
+                  role: agentName,
+                  message: "[ACTIVITY] Browsing $fileUrl",
+                  conversationName: conversationName,
+                );
+                await learnUrl(
+                  agentName,
+                  fileUrl,
+                  collectionNumber: collectionNumber,
+                );
+              }
+            } else {
+              // Handle base64 file
+              final fileType = fileUrl.split(",")[0].split("/")[1].split(";")[0];
+              final bytes = base64.decode(fileUrl.split(",")[1]);
+              final fileName = "Uploaded File ${DateTime.now().millisecondsSinceEpoch}.$fileType";
+              
+              await newConversationMessage(
+                role: agentName,
+                message: "[ACTIVITY] Learning from uploaded file.",
+                conversationName: conversationName,
+              );
+              
+              await learnFile(
+                agentName,
+                fileName,
+                String.fromCharCodes(bytes),
+                collectionNumber: collectionNumber,
+              );
+            }
+          }
         }
       }
     }
@@ -1315,7 +1568,12 @@ class AGiXTSDK {
       conversationName: conversationName,
     );
 
-    String response = await func(newPrompt);
+    String response;
+    if (asyncFunc != null) {
+      response = await asyncFunc(newPrompt);
+    } else {
+      response = await func(newPrompt);
+    }
 
     await newConversationMessage(
       role: agentName,
@@ -1355,9 +1613,9 @@ class AGiXTSDK {
         }
       ],
       "usage": {
-        "prompt_tokens": newPrompt.length, // This is not accurate, just a placeholder
-        "completion_tokens": response.length, // This is not accurate, just a placeholder
-        "total_tokens": newPrompt.length + response.length, // This is not accurate, just a placeholder
+        "prompt_tokens": getTokens(newPrompt),
+        "completion_tokens": getTokens(response),
+        "total_tokens": getTokens(newPrompt) + getTokens(response),
       },
     };
   }
@@ -1387,6 +1645,258 @@ class AGiXTSDK {
         }),
       );
       return jsonDecode(response.body)["response"];
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+  Future<String?> login(String email, String otp) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUri/v1/login"),
+        headers: headers,
+        body: jsonEncode({
+          "email": email,
+          "token": otp,
+        }),
+      );
+      final data = jsonDecode(response.body);
+      if (data.containsKey("detail")) {
+        String detail = data["detail"];
+        if (detail.contains("?token=")) {
+          String token = detail.split("token=")[1];
+          headers = {
+            "Authorization": token,
+            "Content-Type": "application/json",
+          };
+          print("Log in at $detail");
+          return token;
+        }
+      }
+      return null;
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<String?> registerUser(String email, String firstName, String lastName) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUri/v1/user"),
+        headers: headers,
+        body: jsonEncode({
+          "email": email,
+          "first_name": firstName,
+          "last_name": lastName,
+        }),
+      );
+      final data = jsonDecode(response.body);
+      if (data.containsKey("otp_uri")) {
+        // Note: TOTP implementation would be needed here
+        // For now, return the OTP URI for manual handling
+        return data["otp_uri"];
+      }
+      return data.toString();
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<bool> userExists(String email) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUri/v1/user/exists?email=$email"),
+        headers: headers,
+      );
+      return jsonDecode(response.body) as bool;
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> updateUser(Map<String, dynamic> userData) async {
+    try {
+      final response = await http.put(
+        Uri.parse("$baseUri/v1/user"),
+        headers: headers,
+        body: jsonEncode(userData),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getUser() async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUri/v1/user"),
+        headers: headers,
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> oauth2Login(String provider, String code, {String? referrer}) async {
+    try {
+      final data = {
+        "code": code,
+      };
+      if (referrer != null) {
+        data["referrer"] = referrer;
+      }
+      final response = await http.post(
+        Uri.parse("$baseUri/v1/oauth2/$provider"),
+        headers: headers,
+        body: jsonEncode(data),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> updateConversationMessageById(
+    String messageId,
+    String newMessage,
+    String conversationName,
+  ) async {
+    try {
+      final response = await http.put(
+        Uri.parse("$baseUri/api/conversation/message/$messageId"),
+        headers: headers,
+        body: jsonEncode({
+          "new_message": newMessage,
+          "conversation_name": conversationName,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteConversationMessageById(
+    String messageId,
+    String conversationName,
+  ) async {
+    try {
+      final response = await http.delete(
+        Uri.parse("$baseUri/api/conversation/message/$messageId"),
+        headers: headers,
+        body: jsonEncode({
+          "conversation_name": conversationName,
+        }),
+      );
+      return jsonDecode(response.body);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
+  Future<List<String>> getUniqueExternalSources(
+    String agentName, {
+    String collectionNumber = "0",
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUri/api/agent/$agentName/memory/external_sources/$collectionNumber"),
+        headers: headers,
+      );
+      return List<String>.from(jsonDecode(response.body)["external_sources"]);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+  
+  Future<String?> forkConversation(String conversationName, String messageId) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUri/api/conversation/fork"),
+        headers: headers,
+        body: jsonEncode({
+          "conversation_name": conversationName,
+          "message_id": messageId,
+        }),
+      );
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+  
+  Future<String?> getPersona(String agentName) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUri/api/agent/$agentName/persona"),
+        headers: headers,
+      );
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+  
+  Future<String> updatePersona(String agentName, String persona) async {
+    try {
+      final response = await http.put(
+        Uri.parse("$baseUri/api/agent/$agentName/persona"),
+        headers: headers,
+        body: jsonEncode({"persona": persona}),
+      );
+      return jsonDecode(response.body)["message"];
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+  
+  Future<String> createExtension(
+    String agentName,
+    String extensionName,
+    String openapiJsonUrl,
+  ) async {
+    try {
+      // Generate the extension using the Generate Extension from OpenAPI command
+      final chainName = await executeCommand(
+        agentName,
+        "Generate Extension from OpenAPI",
+        {
+          "openapi_json_url": openapiJsonUrl,
+          "extension_name": extensionName,
+        },
+        conversationName: "$extensionName Extension Generation",
+      );
+  
+      // Run the chain to create the extension
+      final extensionDownload = await runChain(
+        chainName: chainName,
+        userInput: "Create an AGiXT extension for $extensionName.",
+        agentName: agentName,
+      );
+  
+      // Download and save the extension file
+      final fileName = Uri.parse(extensionDownload).pathSegments.last;
+      final response = await http.get(Uri.parse(extensionDownload));
+      if (response.statusCode != 200) {
+        throw Exception("Failed to download extension file");
+      }
+  
+      // Create extensions directory if it doesn't exist
+      final extensionDir = Directory("extensions");
+      if (!await extensionDir.exists()) {
+        await extensionDir.create();
+      }
+  
+      // Write the extension file with header comments
+      final file = File("extensions/$fileName");
+      final content = StringBuffer();
+      content.writeln("# Generated from OpenAPI JSON URL: $openapiJsonUrl");
+      content.writeln("# Date Generated: ${DateTime.now().toString()}");
+      content.write(response.body);
+      await file.writeAsString(content.toString());
+  
+      return "$extensionName extension created and downloaded to extensions/$fileName";
     } catch (e) {
       return handleError(e);
     }
