@@ -1,3 +1,7 @@
+## 0.0.5
+  * Added Get OAuth Providers
+  * Resolve Package versions
+
 ## 0.0.4
 
 * Further synchronized functionality with Python SDK:

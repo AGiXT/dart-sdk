@@ -1,6 +1,6 @@
 name: agixtsdk
 description: "An SDK for AGiXT - A powerful SDK for interacting with AGiXT API"
-version: 0.0.4
+version: 0.0.5
 homepage: https://agixt.com
 repository: https://github.com/Josh-XT/AGiXT
 issue_tracker: https://github.com/Josh-XT/AGiXT/issues
@@ -20,10 +20,10 @@ dependencies:
   fake_async: ^1.3.2
   fixnum: ^1.1.1
   http_parser: ^4.1.2
-  leak_tracker: 10.0.8
+  leak_tracker: ^10.0.8
   typed_data: ^1.4.0
   web: ^1.1.0
-  material_color_utilities: 0.11.1
+  material_color_utilities: ^0.11.1
   json_annotation: ^4.8.1
   meta: ^1.12.0
 
