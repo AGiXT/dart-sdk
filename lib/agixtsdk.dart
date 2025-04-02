@@ -93,6 +93,16 @@ class AGiXTSDK {
     }
   }
 
+  Future<List<String>> getOAuthProviders() async {
+    try {
+      final response = await http.get(Uri.parse("$baseUri/v1/oauth"), headers: headers)
+          .then(_processResponse);
+      return List<String>.from(jsonDecode(response.body)["providers"]);
+    } catch (e) {
+      return handleError(e);
+    }
+  }
+
   Future<List<String>> getProvidersByService(String service) async {
     try {
       final response = await http.get(Uri.parse("$baseUri/api/providers/service/$service"), headers: headers);
