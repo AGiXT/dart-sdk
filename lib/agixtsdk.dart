@@ -93,11 +93,32 @@ class AGiXTSDK {
     }
   }
 
-  Future<List<String>> getOAuthProviders() async {
+  Future<List<Map<String, dynamic>>> getOAuthProviders() async {
     try {
       final response = await http.get(Uri.parse("$baseUri/v1/oauth"), headers: headers)
           .then(_processResponse);
-      return List<String>.from(jsonDecode(response.body)["providers"]);
+      // Expecting a JSON like {"providers": [{"name": "google", "client_id": "...", ...}, ...]}
+      final decodedBody = jsonDecode(response.body);
+      if (decodedBody is Map<String, dynamic> && decodedBody.containsKey('providers') && decodedBody['providers'] is List) {
+        // Ensure each item in the list is a Map<String, dynamic>
+        return List<Map<String, dynamic>>.from(decodedBody['providers'].map((item) {
+          if (item is Map<String, dynamic>) {
+            return item;
+          } else {
+            // Handle unexpected item type if necessary, or throw error
+            if (verbose) {
+              print("Warning: Unexpected item type in OAuth providers list: $item");
+            }
+            // Returning an empty map or throwing might be options
+            return <String, dynamic>{}; // Or throw an exception
+          }
+        }));
+      } else {
+         if (verbose) {
+            print("Error: Unexpected response format for OAuth providers. Expected {'providers': [...]}. Got: ${response.body}");
+         }
+        throw Exception("Unexpected response format for OAuth providers.");
+      }
     } catch (e) {
       return handleError(e);
     }
