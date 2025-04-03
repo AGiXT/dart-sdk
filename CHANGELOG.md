@@ -1,3 +1,5 @@
+## 0.0.6
+  * Update Get OAuth Providers
 ## 0.0.5
   * Added Get OAuth Providers
   * Resolve Package versions
