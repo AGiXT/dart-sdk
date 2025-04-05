@@ -97,26 +97,33 @@ class AGiXTSDK {
     try {
       final response = await http.get(Uri.parse("$baseUri/v1/oauth"), headers: headers)
           .then(_processResponse);
-      // Expecting a JSON like {"providers": [{"name": "google", "client_id": "...", ...}, ...]}
+      // Expecting a JSON like {"providers": [{"name": "google", "client_id": "...", "scopes": "...", "authorize": "...", "pkce_required": true}, ...]}
       final decodedBody = jsonDecode(response.body);
-      if (decodedBody is Map<String, dynamic> && decodedBody.containsKey('providers') && decodedBody['providers'] is List) {
-        // Ensure each item in the list is a Map<String, dynamic>
+
+      if (decodedBody is Map<String, dynamic> && 
+          decodedBody.containsKey('providers') && 
+          decodedBody['providers'] is List) {
         return List<Map<String, dynamic>>.from(decodedBody['providers'].map((item) {
           if (item is Map<String, dynamic>) {
-            return item;
+            // Ensure all expected fields are present; you can add defaults if needed
+            return {
+              "name": item["name"] ?? "",
+              "scopes": item["scopes"] ?? "",
+              "authorize": item["authorize"] ?? "",
+              "client_id": item["client_id"] ?? "",
+              "pkce_required": item["pkce_required"] ?? false,
+            };
           } else {
-            // Handle unexpected item type if necessary, or throw error
             if (verbose) {
               print("Warning: Unexpected item type in OAuth providers list: $item");
             }
-            // Returning an empty map or throwing might be options
-            return <String, dynamic>{}; // Or throw an exception
+            return <String, dynamic>{}; // Return empty map for invalid items
           }
-        }));
+        }).where((item) => item.isNotEmpty)); // Filter out invalid/empty entries
       } else {
-         if (verbose) {
-            print("Error: Unexpected response format for OAuth providers. Expected {'providers': [...]}. Got: ${response.body}");
-         }
+        if (verbose) {
+          print("Error: Unexpected response format for OAuth providers. Expected {'providers': [...]}. Got: ${response.body}");
+        }
         throw Exception("Unexpected response format for OAuth providers.");
       }
     } catch (e) {
