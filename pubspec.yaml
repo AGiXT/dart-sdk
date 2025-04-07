@@ -1,6 +1,6 @@
 name: agixtsdk
 description: "An SDK for AGiXT - A powerful SDK for interacting with AGiXT API"
-version: 0.0.6
+version: 0.0.7
 homepage: https://agixt.com
 repository: https://github.com/Josh-XT/AGiXT
 issue_tracker: https://github.com/Josh-XT/AGiXT/issues

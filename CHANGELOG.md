@@ -1,3 +1,6 @@
+## 0.0.7
+  * add all options in Oauth Providers
+
 ## 0.0.6
   * Update Get OAuth Providers
 ## 0.0.5
