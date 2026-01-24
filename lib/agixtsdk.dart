@@ -37,10 +37,50 @@ class AGiXTSDK {
   // Auth Methods
   // ─────────────────────────────────────────────────────────────
 
-  Future<String?> login(String email, String otp) async {
+  /// Login with username/password authentication.
+  ///
+  /// [username] - Username or email address
+  /// [password] - User's password
+  /// [mfaToken] - Optional TOTP code if MFA is enabled
+  ///
+  /// Returns JWT token on success, or response map on failure
+  Future<dynamic> login(String username, String password, {String? mfaToken}) async {
     try {
+      final payload = <String, dynamic>{
+        'username': username,
+        'password': password,
+      };
+      if (mfaToken != null) {
+        payload['mfa_token'] = mfaToken;
+      }
       final response = await http.post(
         Uri.parse('$baseUri/v1/login'),
+        headers: headers,
+        body: jsonEncode(payload),
+      );
+      _parseResponse(response);
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['token'] != null) {
+        headers['Authorization'] = data['token'];
+        return data['token'];
+      }
+      return data;
+    } catch (e) {
+      return _handleError(e);
+    }
+  }
+
+  /// Legacy login with magic link (email + OTP token).
+  /// Maintained for backward compatibility.
+  ///
+  /// [email] - User's email address
+  /// [otp] - TOTP code from authenticator app
+  ///
+  /// Returns JWT token on success, or null on failure
+  Future<String?> loginMagicLink(String email, String otp) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUri/v1/login/magic-link'),
         headers: headers,
         body: jsonEncode({'email': email, 'token': otp}),
       );
@@ -58,30 +98,161 @@ class AGiXTSDK {
     }
   }
 
-  Future<String> registerUser(
+  /// Register a new user with username/password authentication.
+  ///
+  /// [email] - User's email address
+  /// [password] - User's password
+  /// [confirmPassword] - Password confirmation
+  /// [firstName] - User's first name (optional)
+  /// [lastName] - User's last name (optional)
+  /// [username] - Desired username (optional, auto-generated from email if not provided)
+  /// [organizationName] - Company/organization name (optional)
+  ///
+  /// Returns response map with user_id, username, token on success
+  Future<Map<String, dynamic>> registerUser(
     String email,
-    String firstName,
-    String lastName,
-  ) async {
+    String password,
+    String confirmPassword, {
+    String firstName = '',
+    String lastName = '',
+    String? username,
+    String? organizationName,
+  }) async {
     try {
+      final payload = <String, dynamic>{
+        'email': email,
+        'password': password,
+        'confirm_password': confirmPassword,
+        'first_name': firstName,
+        'last_name': lastName,
+      };
+      if (username != null) payload['username'] = username;
+      if (organizationName != null) payload['organization_name'] = organizationName;
+
       final response = await http.post(
         Uri.parse('$baseUri/v1/user'),
         headers: headers,
+        body: jsonEncode(payload),
+      );
+      _parseResponse(response);
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['token'] != null) {
+        headers['Authorization'] = data['token'];
+      }
+      return data;
+    } catch (e) {
+      return _handleError(e);
+    }
+  }
+
+  /// Get MFA setup information including QR code URI.
+  ///
+  /// Returns map with provisioning_uri, secret, and mfa_enabled status
+  Future<Map<String, dynamic>> getMfaSetup() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUri/v1/user/mfa/setup'),
+        headers: headers,
+      );
+      _parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return _handleError(e);
+    }
+  }
+
+  /// Enable MFA for the current user.
+  ///
+  /// [mfaToken] - TOTP code from authenticator app to verify setup
+  ///
+  /// Returns response map with success message
+  Future<Map<String, dynamic>> enableMfa(String mfaToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUri/v1/user/mfa/enable'),
+        headers: headers,
+        body: jsonEncode({'mfa_token': mfaToken}),
+      );
+      _parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return _handleError(e);
+    }
+  }
+
+  /// Disable MFA for the current user.
+  ///
+  /// [password] - User's password (optional)
+  /// [mfaToken] - Current TOTP code (optional)
+  ///
+  /// Returns response map with success message
+  Future<Map<String, dynamic>> disableMfa({String? password, String? mfaToken}) async {
+    try {
+      final payload = <String, dynamic>{};
+      if (password != null) payload['password'] = password;
+      if (mfaToken != null) payload['mfa_token'] = mfaToken;
+      final response = await http.post(
+        Uri.parse('$baseUri/v1/user/mfa/disable'),
+        headers: headers,
+        body: jsonEncode(payload),
+      );
+      _parseResponse(response);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return _handleError(e);
+    }
+  }
+
+  /// Change the current user's password.
+  ///
+  /// [currentPassword] - Current password
+  /// [newPassword] - New password
+  /// [confirmPassword] - New password confirmation
+  ///
+  /// Returns response map with success message
+  Future<Map<String, dynamic>> changePassword(
+    String currentPassword,
+    String newPassword,
+    String confirmPassword,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUri/v1/user/password/change'),
+        headers: headers,
         body: jsonEncode({
-          'email': email,
-          'first_name': firstName,
-          'last_name': lastName,
+          'current_password': currentPassword,
+          'new_password': newPassword,
+          'confirm_password': confirmPassword,
         }),
       );
       _parseResponse(response);
-      final data = jsonDecode(response.body);
-      if (data['otp_uri'] != null) {
-        final mfaToken =
-            data['otp_uri'].toString().split('secret=')[1].split('&')[0];
-        await login(email, mfaToken);
-        return data['otp_uri'];
-      }
-      return jsonEncode(data);
+      return jsonDecode(response.body);
+    } catch (e) {
+      return _handleError(e);
+    }
+  }
+
+  /// Set a password for users who don't have one (e.g., social login users).
+  ///
+  /// [newPassword] - New password
+  /// [confirmPassword] - New password confirmation
+  ///
+  /// Returns response map with success message
+  Future<Map<String, dynamic>> setPassword(
+    String newPassword,
+    String confirmPassword,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUri/v1/user/password/set'),
+        headers: headers,
+        body: jsonEncode({
+          'new_password': newPassword,
+          'confirm_password': confirmPassword,
+        }),
+      );
+      _parseResponse(response);
+      return jsonDecode(response.body);
     } catch (e) {
       return _handleError(e);
     }
