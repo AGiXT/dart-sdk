@@ -44,7 +44,11 @@ class AGiXTSDK {
   /// [mfaToken] - Optional TOTP code if MFA is enabled
   ///
   /// Returns JWT token on success, or response map on failure
-  Future<dynamic> login(String username, String password, {String? mfaToken}) async {
+  Future<dynamic> login(
+    String username,
+    String password, {
+    String? mfaToken,
+  }) async {
     try {
       final payload = <String, dynamic>{
         'username': username,
@@ -127,7 +131,8 @@ class AGiXTSDK {
         'last_name': lastName,
       };
       if (username != null) payload['username'] = username;
-      if (organizationName != null) payload['organization_name'] = organizationName;
+      if (organizationName != null)
+        payload['organization_name'] = organizationName;
 
       final response = await http.post(
         Uri.parse('$baseUri/v1/user'),
@@ -186,7 +191,10 @@ class AGiXTSDK {
   /// [mfaToken] - Current TOTP code (optional)
   ///
   /// Returns response map with success message
-  Future<Map<String, dynamic>> disableMfa({String? password, String? mfaToken}) async {
+  Future<Map<String, dynamic>> disableMfa({
+    String? password,
+    String? mfaToken,
+  }) async {
     try {
       final payload = <String, dynamic>{};
       if (password != null) payload['password'] = password;
