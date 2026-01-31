@@ -1,3 +1,6 @@
+## 0.0.8
+  * Version bump synced all functions with python sdk 1-26-2026 updated
+
 ## 0.0.7
   * add all options in Oauth Providers
 
